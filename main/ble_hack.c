@@ -1,4 +1,4 @@
-#include "ble_hack.h"
+#include "inc/ble_hack.h"
 
 /* Callback functions. */
 FBLEHACK_IsrCallback gpfn_on_rx_data_pdu = NULL;

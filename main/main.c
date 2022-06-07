@@ -29,7 +29,17 @@
 #include "services/gap/ble_svc_gap.h"
 #include "blecent.h"
 #include "driver/uart.h"
-#include "ble_hack.h"
+
+#include "inc/ble_hack.h"
+#include "nanopb/pb_encode.h"
+#include "nanopb/pb_decode.h"
+#include "protocol/whacky.pb.h"
+#include "protocol/whacky.h"
+
+#include "inc/adapter.h"
+#include "inc/comm.h"
+#include "inc/dispatch.h"
+#include "inc/helpers.h"
 
 #define BUF_SIZE (1024)
 
@@ -39,10 +49,22 @@ static uint8_t peer_addr[6];
 
 void ble_store_config_init(void);
 
-void dbg_txt(const char *psz_text)
+void dbg_txt(const char *psz_format, ...)
 {
-  uart_write_bytes(UART_NUM_0, psz_text, strlen(psz_text));
+  Message verbose_msg = Message_init_default;
+  char message[1024], dbg[1024];
+  va_list args;
+
+  va_start(args, psz_format);
+  vsnprintf(message, 1024, psz_format, args);
+  va_end(args);
+
+  /* Create verbose message. */
+  whacky_init_verbose_message(&verbose_msg, message);
+
+  send_pb_message(&verbose_msg);
 }
+
 
 /**
  * Application callback.  Called when the attempt to subscribe to notifications
@@ -257,7 +279,7 @@ blecent_scan(void)
      * Perform a passive scan.  I.e., don't send follow-up scan requests to
      * each advertiser.
      */
-    disc_params.passive = 1;
+    disc_params.passive = 0;
 
     /* Use defaults for the rest of the parameters. */
     disc_params.itvl = 0;
@@ -385,10 +407,15 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         if (rc != 0) {
             return 0;
         }
-
-        dbg_txt("[nimble] gap received adv\r\n");
+       
         /* An advertisment report was received during GAP discovery. */
-        print_adv_fields(&fields);
+        adapter_on_notify_adv(
+            event->disc.addr.val,
+            event->disc.data,
+            event->disc.length_data,
+            NULL,
+            0
+        );
 
         /* Try to connect to the advertiser if it looks interesting. */
         blecent_connect_if_interesting(&event->disc);
@@ -598,31 +625,19 @@ int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
   return HOOK_FORWARD;
 }
 
-
 void
 app_main(void)
 {
     int rc;
+    int nb_bytes_recvd, msg_size, i, j;
+    uint8_t buffer[128];
+    Message message_in = Message_init_default;
 
-    /**
-     * Reconfigure UART0 in order to use it to communicate with our
-     * computer through our custom protocol.
-     */
-    const uart_port_t uart_num = UART_NUM_0;
-    uart_config_t uart_config = {
-      .baud_rate = 115200,
-      .data_bits = UART_DATA_8_BITS,
-      .parity = UART_PARITY_DISABLE,
-      .stop_bits = UART_STOP_BITS_1,
-      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
-    };
-
-    // Configure UART parameters
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
-
+    reconfigure_uart();
     dbg_txt("[system] UART0 reconfigured\r\n");
 
+    adapter_init();
+    
     /* Initialize NVS — it is used to store PHY calibration data */
     esp_err_t ret = nvs_flash_init();
     if  (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -643,7 +658,7 @@ app_main(void)
     ble_hack_rx_data_pdu_handler(ble_rx_data_handler);
     ble_hack_tx_control_pdu_handler(ble_tx_ctl_handler);
     ble_hack_tx_data_pdu_handler(ble_tx_data_handler);
-    dbg_txt("done\r\n");
+    //dbg_txt("done\r\n");
 
     /* Configure the host. */
     ble_hs_cfg.reset_cb = blecent_on_reset;
@@ -661,7 +676,16 @@ app_main(void)
     /* XXX Need to have template for store */
     ble_store_config_init();
 
-    uart_write_bytes(UART_NUM_0, "BLE host ok\r\n", 13);
-
     nimble_port_freertos_init(blecent_host_task);
+
+    /* Handle UART messages. */
+    while (1)
+    {
+        /* Process input messages. */
+        if (receive_pb_message(&message_in) > 0)
+            dispatch_message(&message_in);
+
+        /* Allow other tasks to run. */
+        vTaskDelay(1);
+    }
 }

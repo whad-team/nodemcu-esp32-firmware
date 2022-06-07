@@ -1,2 +1,20 @@
-idf_component_register(SRCS "main.c" "misc.c" "peer.c" "ble_hack.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(
+    SRCS
+    "adapter.c"
+    "comm.c"
+    "dispatch.c"
+    "helpers.c"
+    "main.c"
+    "misc.c"
+    "peer.c"
+    "ble_hack.c"
+    "nanopb/pb_common.c"
+    "nanopb/pb_decode.c"
+    "nanopb/pb_encode.c"
+    "protocol/device.pb.c"
+    "protocol/ble.pb.c"
+    "protocol/generic.pb.c"
+    "protocol/whacky.pb.c"
+    "protocol/whacky.c"
+    INCLUDE_DIRS "."
+)

@@ -1,0 +1,12 @@
+#ifndef HELPERS_INC_H
+#define HELPERS_INC_H
+
+#include <stdarg.h>
+#include "nanopb/pb_encode.h"
+#include "nanopb/pb_decode.h"
+#include "protocol/whacky.pb.h"
+#include "protocol/whacky.h"
+
+void dbg_txt(const char *psz_format, ...);
+
+#endif /* HELPERS_INC_H */
