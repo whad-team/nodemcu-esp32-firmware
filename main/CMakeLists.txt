@@ -12,9 +12,9 @@ idf_component_register(
     "nanopb/pb_decode.c"
     "nanopb/pb_encode.c"
     "protocol/device.pb.c"
-    "protocol/ble.pb.c"
+    "protocol/ble/ble.pb.c"
     "protocol/generic.pb.c"
-    "protocol/whacky.pb.c"
-    "protocol/whacky.c"
-    INCLUDE_DIRS "."
+    "protocol/whad.pb.c"
+    "protocol/whad.c"
+    INCLUDE_DIRS "." "nanopb"
 )

@@ -12,7 +12,7 @@ void dbg_txt(const char *psz_format, ...)
   va_end(args);
 
   /* Create verbose message. */
-  whacky_init_verbose_message(&verbose_msg, message);
+  whad_init_verbose_message(&verbose_msg, message);
 
   send_pb_message(&verbose_msg);
 }

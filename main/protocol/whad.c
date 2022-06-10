@@ -1,5 +1,14 @@
-#include "whacky.h"
+#include "whad.h"
 
+void whad_generic_cmd_result(
+    Message *message,
+    generic_ResultCode result
+)
+{
+    message->which_msg = Message_generic_tag;
+    message->msg.generic.which_msg = generic_Message_cmd_result_tag;
+    message->msg.generic.msg.cmd_result.result = result;
+}
 
 /**
  * @brief Generic verbose message encoding callback.
@@ -10,7 +19,7 @@
  * @return true if everything went ok.
  * @return false if an error is encountered during encoding.
  */
-bool whacky_verbose_msg_encode_cb(pb_ostream_t *ostream, const pb_field_t *field, void * const *arg)
+bool whad_verbose_msg_encode_cb(pb_ostream_t *ostream, const pb_field_t *field, void * const *arg)
 {
     char dbg[1024];
 
@@ -37,7 +46,7 @@ bool whacky_verbose_msg_encode_cb(pb_ostream_t *ostream, const pb_field_t *field
  * 
  * @param message pointer to a `Message` structure representing a message.
  */
-void whacky_init_verbose_message(Message *message, char *psz_message)
+void whad_init_verbose_message(Message *message, char *psz_message)
 {
     /* Specify payload type. */
     message->which_msg = Message_generic_tag;
@@ -45,7 +54,7 @@ void whacky_init_verbose_message(Message *message, char *psz_message)
     /* Fills verbose message data. */
     message->msg.generic.which_msg = generic_Message_verbose_tag;
     message->msg.generic.msg.verbose.data.arg = psz_message;
-    message->msg.generic.msg.verbose.data.funcs.encode = whacky_verbose_msg_encode_cb;
+    message->msg.generic.msg.verbose.data.funcs.encode = whad_verbose_msg_encode_cb;
 }
 
 /**
@@ -54,7 +63,7 @@ void whacky_init_verbose_message(Message *message, char *psz_message)
  * @param message Pointer to a message structure to initialize.
  * @param error Error code.
  */
-void whacky_init_error_message(Message *message, generic_ResultCode error)
+void whad_init_error_message(Message *message, generic_ResultCode error)
 {
     message->which_msg = Message_generic_tag;
     message->msg.generic.which_msg = generic_CmdResult_result_tag;
@@ -62,7 +71,7 @@ void whacky_init_error_message(Message *message, generic_ResultCode error)
 }
 
 
-bool whacky_disc_enum_capabilities_cb(pb_ostream_t *ostream, const pb_field_t *field, void * const *arg)
+bool whad_disc_enum_capabilities_cb(pb_ostream_t *ostream, const pb_field_t *field, void * const *arg)
 {
     DeviceCapability *capabilities = *(DeviceCapability **)arg;
     if (ostream != NULL && field->tag == discovery_DeviceInfoResp_capabilities_tag)
@@ -84,7 +93,7 @@ bool whacky_disc_enum_capabilities_cb(pb_ostream_t *ostream, const pb_field_t *f
 }
 
 
-void whacky_discovery_info_resp(
+void whad_discovery_device_info_resp(
     Message *message, discovery_DeviceType device_type,
     uint32_t proto_min_ver, uint32_t fw_version_major,
     uint32_t fw_version_minor, uint32_t fw_version_rev,
@@ -98,75 +107,31 @@ void whacky_discovery_info_resp(
     message->msg.discovery.msg.info_resp.fw_version_rev = fw_version_rev;
     message->msg.discovery.msg.info_resp.type = device_type;
     message->msg.discovery.msg.info_resp.capabilities.arg = capabilities;
-    message->msg.discovery.msg.info_resp.capabilities.funcs.encode = whacky_disc_enum_capabilities_cb;
+    message->msg.discovery.msg.info_resp.capabilities.funcs.encode = whad_disc_enum_capabilities_cb;
 }
 
-bool whacky_ble_encode_device_discovered_cb(pb_ostream_t *ostream, const pb_field_t *field, void * const *arg)
+void whad_discovery_domain_info_resp(
+    Message *message, discovery_Domain domain,
+    uint64_t supported_commands)
 {
-    /* Take arg and encode it. */
-    whacky_adv_data_t *p_adv_args = *(whacky_adv_data_t **)arg;
-
-    if (ostream != NULL)
-    {
-        /* Encode field tag. */
-        if (!pb_encode_tag_for_field(ostream, field))
-            return false;
-
-        /* Encode field data. */
-        switch(field->tag)
-        {
-            case ble_DeviceDiscovered_adv_data_tag:
-            {
-                pb_encode_string(ostream, (pb_byte_t *)p_adv_args->p_adv_data, p_adv_args->adv_data_length);
-            }
-            break;
-
-            case ble_DeviceDiscovered_scanrsp_data_tag:
-            {
-                pb_encode_string(ostream, (pb_byte_t *)p_adv_args->p_scan_rsp, p_adv_args->scan_rsp_length);
-            }
-            break;
-
-            case ble_DeviceDiscovered_bd_address_tag:
-            {
-                pb_encode_string(ostream, (pb_byte_t *)p_adv_args->bd_addr, 6);
-            }
-            break;
-        }
-    }
-
-    return true;
+    message->which_msg = Message_discovery_tag;
+    message->msg.discovery.which_msg = discovery_Message_domain_resp_tag;
+    message->msg.discovery.msg.domain_resp.domain = domain;
+    message->msg.discovery.msg.domain_resp.supported_commands = supported_commands;
 }
 
-bool whacky_ble_encode_scan_rsp_cb(pb_ostream_t *ostream, const pb_field_t *field, void * const *arg)
-{
-    /* Take arg and encode it. */
-    whacky_adv_data_t *p_adv_args = *(whacky_adv_data_t **)arg;
-
-    if (ostream != NULL && field->tag == ble_DeviceDiscovered_scanrsp_data_tag)
-    {
-        /* This encodes the header for the field, based on the constant info
-        * from pb_field_t. */
-        if (!pb_encode_tag_for_field(ostream, field))
-            return false;
-
-        pb_encode_string(ostream, (pb_byte_t *)p_adv_args->p_scan_rsp, p_adv_args->scan_rsp_length);
-    }
-
-    return true;
-}
-
-void whacky_ble_device_discovered(
+void whad_ble_adv_pdu(
     Message *message,
-    whacky_adv_data_t *args
+    whad_adv_data_t *args
 )
 {
     message->which_msg = Message_ble_tag;
-    message->msg.ble.which_msg = ble_Message_device_disc_tag;
-    message->msg.ble.msg.device_disc.bd_address.arg = args;
-    message->msg.ble.msg.device_disc.bd_address.funcs.encode = whacky_ble_encode_device_discovered_cb;
-    message->msg.ble.msg.device_disc.adv_data.arg = args;
-    message->msg.ble.msg.device_disc.adv_data.funcs.encode = whacky_ble_encode_device_discovered_cb;
-    message->msg.ble.msg.device_disc.scanrsp_data.arg = args;
-    message->msg.ble.msg.device_disc.scanrsp_data.funcs.encode = whacky_ble_encode_device_discovered_cb;
+    message->msg.ble.which_msg = ble_Message_adv_pdu_tag;
+    memcpy(message->msg.ble.msg.adv_pdu.bd_address, args->bd_addr, 6);
+    memcpy(message->msg.ble.msg.adv_pdu.adv_data.bytes, args->p_adv_data, args->adv_data_length);
+    message->msg.ble.msg.adv_pdu.adv_data.size = args->adv_data_length;
+    memcpy(message->msg.ble.msg.adv_pdu.scanrsp_data.bytes, args->p_scan_rsp, args->scan_rsp_length);
+    message->msg.ble.msg.adv_pdu.scanrsp_data.size = args->scan_rsp_length;
+    message->msg.ble.msg.adv_pdu.rssi = args->rssi;
+    message->msg.ble.msg.adv_pdu.adv_type = args->adv_type;
 }

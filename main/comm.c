@@ -47,7 +47,7 @@ void send_pb_message(const void *src_struct)
 
 int receive_pb_message(Message *message)
 {
-    int nb_bytes_recvd, msg_size, i, j;
+    int nb_bytes_recvd, msg_size, i, j, result;
 
     /* Is our buffer full ? */
     if (nb_rx_bytes >= BUF_SIZE)
@@ -57,12 +57,12 @@ int receive_pb_message(Message *message)
     }
 
     /* Check if we have something to read. */
-    nb_bytes_recvd = uart_read_bytes(UART_NUM_0, &pb_rx_buffer[nb_rx_bytes], BUF_SIZE - nb_rx_bytes, 10 / portTICK_PERIOD_MS);
+    nb_rx_bytes += /*nb_bytes_recvd =*/ uart_read_bytes(UART_NUM_0, &pb_rx_buffer[nb_rx_bytes], BUF_SIZE - nb_rx_bytes, 10 / portTICK_PERIOD_MS);
 
-    if (nb_bytes_recvd >= 2)
+    if (nb_rx_bytes >= 2)
     {
         /* Update number of bytes in RX buffer. */
-        nb_rx_bytes += nb_bytes_recvd;
+        //nb_rx_bytes += nb_bytes_recvd;
 
         /* Message is supposed to start with [0xAC, 0xBE]. */
         for (j=0; j<(nb_rx_bytes-1); j++)
@@ -98,13 +98,22 @@ int receive_pb_message(Message *message)
                     if (pb_decode(&stream, Message_fields, message))
                     {
                         /* Success, we got a message. */
-                        return 1;
+                        result = 1;
                     }
                     else
-                        return 0;
+                        result = 0;
+
+                    /* Remove message from buffer. */
+                    j=0;
+                    for (i=(msg_size+4); i < nb_rx_bytes; i++)
+                    {
+                        pb_rx_buffer[j++] = pb_rx_buffer[i];
+                    }
 
                     /* Clear rx buffer. */
-                    nb_rx_bytes = 0;
+                    nb_rx_bytes = j;
+                    
+                    return result;
                 }
             }
         }
@@ -112,8 +121,8 @@ int receive_pb_message(Message *message)
         {
         }
     }
-    else
-        nb_rx_bytes += nb_bytes_recvd;
+    //else
+    //    nb_rx_bytes += nb_bytes_recvd;
 
     return 0;
 }

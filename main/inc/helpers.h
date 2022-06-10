@@ -4,8 +4,8 @@
 #include <stdarg.h>
 #include "nanopb/pb_encode.h"
 #include "nanopb/pb_decode.h"
-#include "protocol/whacky.pb.h"
-#include "protocol/whacky.h"
+#include "protocol/whad.pb.h"
+#include "protocol/whad.h"
 
 void dbg_txt(const char *psz_format, ...);
 
