@@ -8,5 +8,6 @@
 #include "protocol/whad.h"
 
 void dbg_txt(const char *psz_format, ...);
+void dbg_txt_rom(const char *psz_format, ...);
 
 #endif /* HELPERS_INC_H */

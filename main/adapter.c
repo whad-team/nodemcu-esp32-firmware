@@ -15,6 +15,7 @@
 static const char *tag = "whd_ble";
 static int blecent_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t peer_addr[6];
+static uint8_t null_bd_addr[6] = {0};
 
 
 static adapter_t g_adapter;
@@ -340,17 +341,8 @@ blecent_should_connect(const struct ble_gap_disc_desc *disc)
         return rc;
     }
 
-    if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
-      const char msg[256];
-      snprintf(msg, 256, "Peer address from menuconfig: %s\r\n", CONFIG_EXAMPLE_PEER_ADDR);
-        dbg_txt(msg);
-        /* Convert string to address */
-        sscanf(CONFIG_EXAMPLE_PEER_ADDR, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-               &peer_addr[5], &peer_addr[4], &peer_addr[3],
-               &peer_addr[2], &peer_addr[1], &peer_addr[0]);
-        if (memcmp(peer_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
-            return 0;
-        }
+    if (memcmp(g_adapter.target_dev_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
+        return 0;
     }
 
     return 1;
@@ -464,8 +456,10 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                         0
                     );
                 }
-                else if (g_adapter.state == CONNECTING)
+                else if (g_adapter.state == CENTRAL)
                 {
+                    //dbg_txt("ADV PDU received");
+
                     /* Try to connect to the advertiser if it looks interesting. */
                     blecent_connect_if_interesting(&event->disc);
                 }
@@ -519,6 +513,8 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         if (event->connect.status == 0) {
             dbg_txt("[nimble] connection established\r\n");
             
+            g_adapter.conn_handle = event->connect.conn_handle;
+
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
             print_conn_desc(&desc);
@@ -640,68 +636,33 @@ static void blecent_host_task(void *param)
 
 int ble_rx_ctl_handler(uint8_t *p_pdu, int length)
 {
-  char msg[1025];
-  char data[4];
-  snprintf(msg, 1024, "[ble:rx:ctl] received %d bytes | ", length);
-  data[0]=0;
-  for (int i=0; i<length; i++)
-  {
-    snprintf(data,4,"%02x ", p_pdu[i]);
-    strncat(msg, data, 1024);
-  }
-  data[0]='\r';
-  data[1]='\n';
-  data[2]=0;
-  strncat(msg, data, 3);
-  dbg_txt(msg);
+  Message pdu;
+  
   return HOOK_FORWARD;
 }
 
 int ble_rx_data_handler(uint8_t *p_pdu, int length)
 {
-  char msg[1025];
-  char data[4];
-  snprintf(msg, 1024, "[ble:rx:data] received %d bytes | ", length);
-  data[0]=0;
-  for (int i=0; i<length; i++)
-  {
-    snprintf(data,4,"%02x ", p_pdu[i]);
-    strncat(msg, data, 1024);
-  }
-  data[0]='\r';
-  data[1]='\n';
-  data[2]=0;
-  strncat(msg, data, 3);
-  dbg_txt(msg);
-  return HOOK_FORWARD;
+  /* Rebuild a data PDU and send it to the host. We don't need to forward this
+  to the underlying BLE stack as it is not used in our case. */
+  Message pdu;
+
+  whad_ble_data_pdu(&pdu, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER);
+  pending_pb_message(&pdu);
+
+  return HOOK_BLOCK;
 }
 
+/* This handler SHALL NOT be called, as the underlying BLE stack is not supposed
+to send data. */
 int ble_tx_data_handler(uint8_t *p_pdu, int length)
 {
-  char msg[1025];
-  char data[4];
-  snprintf(msg, 1024, "[ble:tx:data] sending %d bytes | ", length);
-  data[0]=0;
-  for (int i=0; i<length; i++)
-  {
-    snprintf(data,4,"%02x ", p_pdu[i]);
-    strncat(msg, data, 1024);
-  }
-  data[0]='\r';
-  data[1]='\n';
-  data[2]=0;
-  strncat(msg, data, 3);
-  dbg_txt(msg);
-
-  /* Block all data. */
-  return HOOK_BLOCK;
+  return HOOK_FORWARD;
 }
 
 int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
 {
-  char msg[1025];
-  snprintf(msg, 1024, "[ble:tx:ctl] Sending CTLPDU 0x%02x\r\n", p_llcp_pdu->opcode);
-  dbg_txt(msg);
+  dbg_txt_rom("[ble:tx:ctl] sent 0x%02x opcode", p_llcp_pdu->opcode);
   return HOOK_FORWARD;
 }
 
@@ -718,6 +679,26 @@ void adapter_quit_state(adapter_state_t state)
             }
             break;
 
+        case CENTRAL:
+            {
+                /* Stop advertising if required. */
+                if (ble_gap_adv_active())
+                {
+                    /* Stop advertising. */
+                    ble_gap_adv_stop();
+                }
+                else if (ble_gap_conn_active())
+                {
+                    /* Terminate connection. */
+                    ble_gap_terminate(g_adapter.conn_handle, 3);
+                }
+
+                /* Reset target address. */
+                memset(g_adapter.target_dev_addr, 0, 6);
+                g_adapter.conn_state = DISCONNECTED;
+                g_adapter.conn_handle = 0;
+            }
+
         default:
             break;
     }
@@ -731,6 +712,13 @@ adapter_state_t adapter_enter_state(adapter_state_t state)
             {
                 /* Start passive scanner. */
                 //blecent_scan();
+            }
+            break;
+
+        case CENTRAL:
+            {
+                /* Reset target address. */
+                memset(g_adapter.target_dev_addr, 0, 6);
             }
             break;
 
@@ -868,6 +856,45 @@ void adapter_on_enable_scan(ble_ScanModeCmd *scan_mode)
     }
 }
 
+void adapter_on_enable_central(ble_CentralModeCmd *central_mode)
+{
+    Message cmd_result;
+
+    /* Switch to central mode. */
+    if (adapter_set_state(CENTRAL))
+    {
+        dbg_txt("central mode set");
+
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+    }
+    else
+    {
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);        
+    }
+}
+
+void adapter_on_connect(ble_ConnectToCmd *connect)
+{
+    Message cmd_result;
+
+    if ((g_adapter.state == CENTRAL))
+    {
+        /* Copy target address. */
+        memcpy(g_adapter.target_dev_addr, connect->bd_address, 6);
+
+        /* Success ! */
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+    }
+    else
+    {
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);   
+    }
+}
+
 void adapter_on_start(ble_StartCmd *start)
 {
     Message cmd_result;
@@ -886,6 +913,28 @@ void adapter_on_start(ble_StartCmd *start)
             send_pb_message(&cmd_result);
 
             return;
+        }
+        break;
+
+        case CENTRAL:
+        {
+            if (memcmp(g_adapter.target_dev_addr, null_bd_addr, 6))
+            {
+                /* Start scanning. */
+                blecent_scan();
+
+                /* Success. */
+                whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+                send_pb_message(&cmd_result);                
+
+                return;
+            }
+            else
+            {
+                /* Send an error (wrong parameter). */
+                whad_generic_cmd_result(&cmd_result, generic_ResultCode_PARAMETER_ERROR);
+                send_pb_message(&cmd_result);   
+            }
         }
         break;
 
@@ -916,6 +965,22 @@ void adapter_on_stop(ble_StartCmd *stop)
             send_pb_message(&cmd_result);
 
             return;
+        }
+        break;
+
+        case CENTRAL:
+        {
+            /* Stop advertising if required. */
+            if (ble_gap_adv_active())
+            {
+                /* Stop advertising. */
+                ble_gap_adv_stop();
+            }
+            else if (ble_gap_conn_active())
+            {
+                /* Terminate connection. */
+                ble_gap_terminate(g_adapter.conn_handle, 3);
+            }
         }
         break;
 

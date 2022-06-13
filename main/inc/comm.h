@@ -11,6 +11,8 @@
 
 void reconfigure_uart(void);
 void send_pb_message(const void *src_struct);
+void pending_pb_message(const void *src_struct);
+void flush_pending_pb_messages(void);
 int receive_pb_message(Message *message);
 
 #endif /* COMM_INC_H */

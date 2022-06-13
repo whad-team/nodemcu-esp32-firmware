@@ -17,15 +17,24 @@
 typedef enum {
     IDLE,
     OBSERVER,
+    CENTRAL,
+} adapter_state_t;
+
+typedef enum {
     CONNECTING,
     CONNECTED,
     DISCONNECTED
-} adapter_state_t;
+} adapter_conn_state_t;
 
 typedef struct {
     /* Current state. */
     adapter_state_t state;
     bool active_scan;
+
+    /* Target device. */
+    uint8_t target_dev_addr[6];
+    adapter_conn_state_t conn_state;
+    uint16_t conn_handle;
 
     /* Capabilities. */
     DeviceCapability *capabilities;
@@ -50,6 +59,8 @@ void adapter_on_device_info_req(discovery_DeviceInfoQuery *query);
 void adapter_on_domain_info_req(discovery_DeviceDomainInfoQuery *query);
 
 void adapter_on_enable_scan(ble_ScanModeCmd *scan_mode);
+void adapter_on_enable_central(ble_CentralModeCmd *central_mode);
+void adapter_on_connect(ble_ConnectToCmd *connect);
 void adapter_on_start(ble_StartCmd *start);
 void adapter_on_stop(ble_StartCmd *stop);
 void adapter_on_sniff_adv(ble_SniffAdvCmd *sniff_adv);

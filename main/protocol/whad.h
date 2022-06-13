@@ -39,6 +39,12 @@ void whad_ble_adv_pdu(
     Message *message,
     whad_adv_data_t *args
 );
+void whad_ble_data_pdu(
+    Message *message,
+    uint8_t *p_pdu,
+    int length,
+    ble_BleDirection direction
+);
 void whad_generic_cmd_result(
     Message *message,
     generic_ResultCode result

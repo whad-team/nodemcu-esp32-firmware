@@ -4,6 +4,9 @@ static uint8_t pb_tx_buffer[1024];
 static uint8_t pb_rx_buffer[1024];
 volatile int nb_rx_bytes = 0;
 
+static uint8_t pb_pending_tx_buffer[1024];
+volatile int nb_pending_bytes = 0;
+
 void reconfigure_uart(void)
 {
     /**
@@ -23,6 +26,41 @@ void reconfigure_uart(void)
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
 }
+
+void pending_pb_message(const void *src_struct)
+{
+    int size;
+    uint8_t header[4];
+    
+    /* Encode message into our buffer. */
+    pb_ostream_t stream = pb_ostream_from_buffer(pb_tx_buffer, 1024);
+    if (pb_encode(&stream, Message_fields, src_struct))
+    {
+        /* Write header. */
+        header[0] = '\xAC';
+        header[1] = '\xBE';
+        header[2] = (stream.bytes_written & 0xff);
+        header[3] = (stream.bytes_written >> 8) & 0xff;
+        //uart_write_bytes(UART_NUM_0, header, 4);
+        memcpy(&pb_pending_tx_buffer[nb_pending_bytes], header, 4);
+        nb_pending_bytes += 4;
+
+        /* Write serialized data. */
+        //uart_write_bytes(UART_NUM_0, pb_tx_buffer, stream.bytes_written);
+        memcpy(&pb_pending_tx_buffer[nb_pending_bytes], pb_tx_buffer, stream.bytes_written);
+        nb_pending_bytes += stream.bytes_written;
+    }
+}
+
+void flush_pending_pb_messages(void)
+{
+    if (nb_pending_bytes > 0)
+    {
+        uart_write_bytes(UART_NUM_0, pb_pending_tx_buffer, nb_pending_bytes);
+        nb_pending_bytes = 0;
+    }
+}
+
 
 void send_pb_message(const void *src_struct)
 {

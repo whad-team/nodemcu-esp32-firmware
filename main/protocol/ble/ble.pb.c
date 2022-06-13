@@ -84,10 +84,10 @@ PB_BIND(ble_Hijacked, ble_Hijacked, AUTO)
 PB_BIND(ble_RawPduReceived, ble_RawPduReceived, AUTO)
 
 
-PB_BIND(ble_PduReceived, ble_PduReceived, AUTO)
+PB_BIND(ble_PduReceived, ble_PduReceived, 2)
 
 
-PB_BIND(ble_Message, ble_Message, AUTO)
+PB_BIND(ble_Message, ble_Message, 2)
 
 
 

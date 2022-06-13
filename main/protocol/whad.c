@@ -135,3 +135,17 @@ void whad_ble_adv_pdu(
     message->msg.ble.msg.adv_pdu.rssi = args->rssi;
     message->msg.ble.msg.adv_pdu.adv_type = args->adv_type;
 }
+
+void whad_ble_data_pdu(
+    Message *message,
+    uint8_t *p_pdu,
+    int length,
+    ble_BleDirection direction
+)
+{
+    message->which_msg = Message_ble_tag;
+    message->msg.ble.which_msg = ble_Message_pdu_tag;
+    message->msg.ble.msg.pdu.direction = direction;
+    message->msg.ble.msg.pdu.pdu.size = length;
+    memcpy(message->msg.ble.msg.pdu.pdu.bytes, p_pdu, length);
+}

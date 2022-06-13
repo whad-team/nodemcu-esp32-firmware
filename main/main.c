@@ -51,6 +51,7 @@ app_main(void)
     dbg_txt("[system] Hooking BLE ROM functions ... ");
     ble_hack_install_hooks();
     /* Install a RX handler. */
+    
     ble_hack_rx_control_pdu_handler(ble_rx_ctl_handler);
     ble_hack_rx_data_pdu_handler(ble_rx_data_handler);
     ble_hack_tx_control_pdu_handler(ble_tx_ctl_handler);
@@ -62,6 +63,9 @@ app_main(void)
         /* Process input messages. */
         if (receive_pb_message(&message_in) > 0)
             dispatch_message(&message_in);
+        
+        /* Flush pending messages. */
+        flush_pending_pb_messages();
 
         /* Allow other tasks to run. */
         vTaskDelay(10);

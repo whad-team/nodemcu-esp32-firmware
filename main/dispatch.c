@@ -24,6 +24,18 @@ void dispatch_message(Message *message)
                     }
                     break;
 
+                    case ble_Message_central_mode_tag:
+                    {
+                        adapter_on_enable_central(&message->msg.ble.msg.central_mode);
+                    }
+                    break;
+
+                    case ble_Message_connect_tag:
+                    {
+                        adapter_on_connect(&message->msg.ble.msg.connect);
+                    }
+                    break;
+
                     case ble_Message_start_tag:
                     {
                         adapter_on_start(&message->msg.ble.msg.start);
