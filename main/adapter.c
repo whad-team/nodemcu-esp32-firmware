@@ -514,6 +514,9 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
             dbg_txt("[nimble] connection established\r\n");
             
             g_adapter.conn_handle = event->connect.conn_handle;
+            g_adapter.conn_state = CONNECTED;
+
+            adapter_on_notify_connected();
 
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             assert(rc == 0);
@@ -526,6 +529,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                 MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
                 return 0;
             }
+
         } else {
             /* Connection attempt failed; resume scanning. */
             MODLOG_DFLT(ERROR, "Error: Connection failed; status=%d\n",
@@ -544,6 +548,8 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
 
         /* Forget about peer. */
         peer_delete(event->disconnect.conn.conn_handle);
+
+        g_adapter.conn_state = DISCONNECTED;
 
         /* Resume scanning. */
         blecent_scan();
@@ -634,29 +640,36 @@ static void blecent_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-int ble_rx_ctl_handler(uint8_t *p_pdu, int length)
+int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
-  Message pdu;
+  dbg_txt_rom("[ble:rx:ctl] got %d bytes", length);
   
   return HOOK_FORWARD;
 }
 
-int ble_rx_data_handler(uint8_t *p_pdu, int length)
+int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
   Message pdu;
 
-  whad_ble_data_pdu(&pdu, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER);
+  whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER);
   pending_pb_message(&pdu);
 
-  return HOOK_BLOCK;
+  return HOOK_FORWARD;
 }
 
 /* This handler SHALL NOT be called, as the underlying BLE stack is not supposed
 to send data. */
-int ble_tx_data_handler(uint8_t *p_pdu, int length)
+int ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
+  /* Rebuild a data PDU and send it to the host. We don't need to forward this
+  to the underlying BLE stack as it is not used in our case. */
+  Message pdu;
+
+  whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_MASTER_TO_SLAVE);
+  pending_pb_message(&pdu);
+
   return HOOK_FORWARD;
 }
 
@@ -812,6 +825,14 @@ void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t *bd_addr, uint8_t
 
     /* Build notification and send to host. */
     whad_ble_adv_pdu(&notification, &adv_data);
+    send_pb_message(&notification);
+}
+
+void adapter_on_notify_connected(void)
+{
+    Message notification;
+
+    whad_ble_notify_connected(&notification);
     send_pb_message(&notification);
 }
 
@@ -991,4 +1012,30 @@ void adapter_on_stop(ble_StartCmd *stop)
     /* Error. */
     whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
     send_pb_message(&cmd_result);
+}
+
+void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
+{
+    Message cmd_result;
+
+    if ((g_adapter.state == CENTRAL) && (g_adapter.conn_state == CONNECTED))
+    {
+        /* Send PDU. */
+        send_raw_data_pdu(
+            g_adapter.conn_handle,
+            send_pdu->pdu.bytes[0],
+            &send_pdu->pdu.bytes[2],
+            send_pdu->pdu.bytes[1],
+            false
+        );
+
+        /* Success ! */
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+    }
+    else
+    {
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);   
+    }
 }

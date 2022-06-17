@@ -52,7 +52,7 @@ app_main(void)
     ble_hack_install_hooks();
     /* Install a RX handler. */
     
-    ble_hack_rx_control_pdu_handler(ble_rx_ctl_handler);
+    //ble_hack_rx_control_pdu_handler(ble_rx_ctl_handler);
     ble_hack_rx_data_pdu_handler(ble_rx_data_handler);
     ble_hack_tx_control_pdu_handler(ble_tx_ctl_handler);
     ble_hack_tx_data_pdu_handler(ble_tx_data_handler);

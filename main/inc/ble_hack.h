@@ -542,7 +542,7 @@ typedef struct {
   uint8_t *data;
 } llcp_tester_send_params;
 
-typedef int (*FBLEHACK_IsrCallback)(uint8_t *p_pdu, int length);
+typedef int (*FBLEHACK_IsrCallback)(uint16_t header, uint8_t *p_pdu, int length);
 typedef int (*FBLEHACK_CtlCallback)(llcp_opinfo *p_llcp_pdu);
 typedef int (*F_rom_llc_llcp_send)(int conhdl, uint8_t *p_pdu, uint8_t opcode);
 
@@ -559,6 +559,7 @@ void ble_hack_tx_data_pdu_handler(FBLEHACK_IsrCallback pfn_data_callback);
 
 /* Send a data PDU. */
 void send_data_pdu(int conhdl, void *p_pdu, int length);
+void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool can_be_freed);
 
 /* Send a control PDU. */
 void send_control_pdu(int conhdl, uint8_t *p_pdu, int length);

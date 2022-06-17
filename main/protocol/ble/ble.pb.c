@@ -45,7 +45,10 @@ PB_BIND(ble_CentralModeCmd, ble_CentralModeCmd, AUTO)
 PB_BIND(ble_ConnectToCmd, ble_ConnectToCmd, AUTO)
 
 
-PB_BIND(ble_SendPDUCmd, ble_SendPDUCmd, AUTO)
+PB_BIND(ble_SendRawPDUCmd, ble_SendRawPDUCmd, 2)
+
+
+PB_BIND(ble_SendPDUCmd, ble_SendPDUCmd, 2)
 
 
 PB_BIND(ble_DisconnectCmd, ble_DisconnectCmd, AUTO)
@@ -81,7 +84,7 @@ PB_BIND(ble_Synchronized, ble_Synchronized, AUTO)
 PB_BIND(ble_Hijacked, ble_Hijacked, AUTO)
 
 
-PB_BIND(ble_RawPduReceived, ble_RawPduReceived, AUTO)
+PB_BIND(ble_RawPduReceived, ble_RawPduReceived, 2)
 
 
 PB_BIND(ble_PduReceived, ble_PduReceived, 2)

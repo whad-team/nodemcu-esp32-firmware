@@ -48,9 +48,9 @@ static void blecent_on_reset(int reason);
 static void blecent_on_sync(void);
 
 /* BLE hooks. */
-int ble_rx_ctl_handler(uint8_t *p_pdu, int length);
-int ble_rx_data_handler(uint8_t *p_pdu, int length);
-int ble_tx_data_handler(uint8_t *p_pdu, int length);
+int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length);
+int ble_rx_data_handler(uint16_t header,uint8_t *p_pdu, int length);
+int ble_tx_data_handler(uint16_t header,uint8_t *p_pdu, int length);
 int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu);
 
 /* Callbacks. */
@@ -63,7 +63,9 @@ void adapter_on_enable_central(ble_CentralModeCmd *central_mode);
 void adapter_on_connect(ble_ConnectToCmd *connect);
 void adapter_on_start(ble_StartCmd *start);
 void adapter_on_stop(ble_StartCmd *stop);
+void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu);
 void adapter_on_sniff_adv(ble_SniffAdvCmd *sniff_adv);
+void adapter_on_notify_connected(void);
 void adapter_on_notify_adv(
     uint8_t adv_type,
     int rssi,

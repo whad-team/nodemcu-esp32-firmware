@@ -45,6 +45,16 @@ void whad_ble_data_pdu(
     int length,
     ble_BleDirection direction
 );
+
+void whad_ble_notify_connected(Message *message);
+
+void whad_ble_ll_data_pdu(
+    Message *message,
+    uint16_t header,
+    uint8_t *p_pdu,
+    int length,
+    ble_BleDirection direction
+);
 void whad_generic_cmd_result(
     Message *message,
     generic_ResultCode result

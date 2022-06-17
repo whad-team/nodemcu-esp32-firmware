@@ -48,6 +48,12 @@ void dispatch_message(Message *message)
                     }
                     break;
 
+                    case ble_Message_send_pdu_tag:
+                    {
+                        adapter_on_send_pdu(&message->msg.ble.msg.send_pdu);
+                    }
+                    break;
+
                     default:
                     {
                         /* Unsupported message. */

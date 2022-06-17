@@ -1,4 +1,5 @@
 #include "inc/ble_hack.h"
+#include "inc/helpers.h"
 
 /* Callback functions. */
 FBLEHACK_IsrCallback gpfn_on_rx_data_pdu = NULL;
@@ -25,6 +26,10 @@ F_r_lld_pdu_data_send pfn_lld_pdu_data_send = NULL;
 typedef int (*F_r_lld_pdu_tx_prog)(struct lld_evt_tag *evt);
 F_r_lld_pdu_tx_prog pfn_lld_pdu_tx_prog = NULL;
 struct llcp_pdu_tag *g_prev_llcp = NULL;
+
+/* Hook r_lld_pdu_data_tx_push(struct lld_evt_tag *evt, struct em_desc_node *txnode, bool can_be_freed, bool encrypted) */
+typedef int (*F_r_lld_pdu_data_tx_push)(struct lld_evt_tag *evt, struct em_desc_node *txnode, bool can_be_freed);
+F_r_lld_pdu_data_tx_push pfn_lld_pdu_data_tx_push = NULL;
 
 F_rom_llc_llcp_send pfn_rom_llc_llcp_send = (void*)(0x40043ed4);
 
@@ -61,8 +66,11 @@ extern void **r_modules_funcs_p[100];
 
 extern struct em_buf_env_tag em_buf_env;
 struct co_list *gp_tx_prog = NULL;
-struct lld_evt_tag *gp_evt = NULL;
+//struct lld_evt_tag *gp_evt = NULL;
+extern struct lld_evt_tag lld_evt_env;
 struct em_desc_node* pkt = NULL;
+//uint32_t *p_llc_env = (uint32_t*)(LLC_ENV_ADDR);
+extern uint32_t *llc_env[10];
 
 /* Give access to llc_llcp_send() ROM function. */
 typedef int (*F_llc_llcp_send)(uint8_t conhdl, void *param, uint8_t opcode);
@@ -171,6 +179,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
   int rssi;
   int nb_links;
   pkt_hdr_t *p_header = (pkt_hdr_t *)(BLE_RX_PKT_HDR_ADDR);
+  int res;
   #ifdef BLE_HACK_DEBUG
   int i;
   #endif
@@ -223,7 +232,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
       {
         if (gpfn_on_rx_control_pdu != NULL)
         {
-          forward = gpfn_on_rx_control_pdu(p_pdu, (pkt_header>>8)&0xff);
+          forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
         }
       }
       /* Is it a data PDU ? */
@@ -231,7 +240,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
       {
         if (gpfn_on_rx_data_pdu != NULL)
         {
-          forward = gpfn_on_rx_data_pdu(p_pdu, (pkt_header>>8)&0xff);
+          forward = gpfn_on_rx_data_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
         }
       }
 
@@ -275,6 +284,49 @@ int _lld_pdu_tx_prog(struct lld_evt_tag *evt)
   res = pfn_lld_pdu_tx_prog(evt);
   return res;
 }
+
+
+/**
+ * _lld_pdu_data_tx_push()
+ * 
+ * This hook is called during each connection event to handle pending BLE PDUs
+ * (data PDU + control PDU).
+ **/
+
+int _lld_pdu_data_tx_push(struct lld_evt_tag *evt, struct em_desc_node *txnode, bool can_be_freed)
+{
+  int res;
+  char dbghex[1024];
+  uint8_t *p_buf = (uint8_t *)(p_rx_buffer + txnode->buffer_ptr);
+
+#if 0  
+  /* This is for ESP32_WROOM32 only */
+  uint32_t *p_evt = (uint32_t *)(*(uint32_t*)((uint32_t)llc_env[0]+0x10) + 0x28);
+  int res;
+
+  for (int i=0;i<txnode->length;i++)
+    snprintf(&dbghex[2*i], 3, "%02x", p_buf[i]);
+  dbghex[2*txnode->length] = '\0';
+  
+  /* Notify LLID, length and PDU from txnode. */
+  dbg_txt_rom("txnode evt:0x%08x llid:0x%02x length:%d buf: %s (freed:%d)", evt, txnode->llid, txnode->length, dbghex, can_be_freed);
+#endif
+
+  if (gpfn_on_tx_data_pdu != NULL)
+  {
+    /* Should we block this data PDU ? */
+    if (gpfn_on_tx_data_pdu(txnode->llid | (txnode->length << 8), p_buf, txnode->length) == HOOK_BLOCK)
+    {
+      /* Set TX buffer length to zero (won't be transmitted, but will be freed later. */
+      txnode->length = 0;
+    }
+  }
+
+  /* Call data tx push. */
+  res = pfn_lld_pdu_data_tx_push(evt, txnode, can_be_freed);
+  return res;
+}
+
 
 /*********************************************
  * Link-layer Control Procedures hooks
@@ -740,11 +792,11 @@ int _lld_pdu_data_send(struct hci_acl_data_tx *param)
     }
   esp_rom_printf("\r\n");
   #endif
-
+  
   if (gpfn_on_tx_data_pdu != NULL)
   {
     /* Should we block this data PDU ? */
-    if (gpfn_on_tx_data_pdu((uint8_t *)(p_rx_buffer + param->buf->buf_ptr), param->length) == HOOK_BLOCK)
+    if (gpfn_on_tx_data_pdu(0, (uint8_t *)(p_rx_buffer + param->buf->buf_ptr), param->length) == HOOK_BLOCK)
     {
       /* Set TX buffer length to zero (won't be transmitted, but will be freed later. */
       param->length = 0;
@@ -769,6 +821,51 @@ struct em_buf_node *em_buf_tx_alloc(void)
     node = (struct em_buf_node *) co_list_pop_front(&em_buf_env.tx_buff_free);
     portENABLE_INTERRUPTS();
     return node;
+}
+
+struct em_desc_node *em_buf_tx_desc_alloc(void)
+{
+    struct em_desc_node *node = NULL;
+    portDISABLE_INTERRUPTS();
+    node = (struct em_desc_node *) co_list_pop_front(&em_buf_env.tx_desc_free);
+    portENABLE_INTERRUPTS();
+    return node;
+}
+
+/**
+ * send_raw_data_pdu()
+ * 
+ * @brief Sends a raw data PDU. 
+ * @param conhdl: connection handle (by default 0 if there is only one connection alive)
+ * @param p_pdu: pointer to a data PDU (bytes)
+ * @param length: data PDU length (without its header)
+ **/
+
+void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool can_be_freed)
+{
+  struct em_buf_node* node;
+  struct em_desc_node *data_send;
+  struct lld_evt_env *env = (uint32_t *)(*(uint32_t*)((uint32_t)llc_env[conhdl]+0x10) + 0x28);
+
+  /* Allocate data_send. */
+  data_send = (struct em_desc_node *)em_buf_tx_desc_alloc();
+
+  /* Allocate a buffer. */
+  node = em_buf_tx_alloc();
+
+  /* Write data into allocated buf node. */
+  memcpy((uint8_t *)((uint8_t *)p_rx_buffer + node->buf_ptr), p_pdu, length);
+
+  /* Write information into our em_desc_node structure. */
+  data_send->llid = llid;
+  data_send->length = length;
+  data_send->buffer_idx = node->idx;
+  data_send->buffer_ptr = node->buf_ptr;
+
+  /* Call lld_pdu_data_tx_push */
+  portDISABLE_INTERRUPTS();
+  pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
+  portENABLE_INTERRUPTS();
 }
 
 
@@ -840,12 +937,14 @@ void ble_hack_install_hooks(void)
   #endif
   r_btdm_option_data[615] = (uint32_t *)_lld_pdu_rx_handler;
 
+#if 0
   /* Hook r_lld_pdu_data_send */
   pfn_lld_pdu_data_send = (void *)(((uint32_t *)g_ip_funcs_p)[598]);
   #ifdef BLE_HACK_DEBUG
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_data_send, (uint32_t)_lld_pdu_data_send);
   #endif
   ((uint32_t *)g_ip_funcs_p)[598] = (uint32_t)_lld_pdu_data_send;
+#endif
 
   /* Hook r_lld_pdu_tx_prog */
   pfn_lld_pdu_tx_prog = (void *)(((uint32_t *)g_ip_funcs_p)[600]);
@@ -853,6 +952,13 @@ void ble_hack_install_hooks(void)
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_tx_prog, (uint32_t)_lld_pdu_tx_prog);
   #endif
   ((uint32_t *)g_ip_funcs_p)[600] = (uint32_t)_lld_pdu_tx_prog;
+
+  /* Hook r_lld_pdu_data_tx_push */
+  pfn_lld_pdu_data_tx_push = (void *)(((uint32_t *)g_ip_funcs_p)[597]);
+  #ifdef BLE_HACK_DEBUG
+  printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_data_tx_push, (uint32_t)_lld_pdu_data_tx_push);
+  #endif
+  ((uint32_t *)g_ip_funcs_p)[597] = (uint32_t)_lld_pdu_data_tx_push;
 
   /**
    * Install LLCP hooks
