@@ -155,23 +155,37 @@ void whad_ble_ll_data_pdu(
     uint16_t header,
     uint8_t *p_pdu,
     int length,
-    ble_BleDirection direction
+    ble_BleDirection direction,
+    int conn_handle,
+    bool processed
 )
 {
     message->which_msg = Message_ble_tag;
     message->msg.ble.which_msg = ble_Message_pdu_tag;
+    message->msg.ble.msg.pdu.processed = processed?1:0;
     message->msg.ble.msg.pdu.direction = direction;
+    message->msg.ble.msg.pdu.conn_handle = conn_handle;
     message->msg.ble.msg.pdu.pdu.size = length + 2;
     message->msg.ble.msg.pdu.pdu.bytes[0] = (header & 0xff);
     message->msg.ble.msg.pdu.pdu.bytes[1] = (header >> 8) & 0xff;
     memcpy(&message->msg.ble.msg.pdu.pdu.bytes[2], p_pdu, length);
 }
 
-void whad_ble_notify_connected(Message *message)
+void whad_ble_notify_connected(Message *message, uint32_t conn_handle)
 {
     message->which_msg = Message_ble_tag;
     message->msg.ble.which_msg = ble_Message_connected_tag;
     message->msg.ble.msg.connected.access_address = 0;
+    message->msg.ble.msg.connected.conn_handle = conn_handle;
     memset(message->msg.ble.msg.connected.advertiser, 0, 6);
     memset(message->msg.ble.msg.connected.initiator, 0, 6);
+}
+
+
+void whad_ble_notify_disconnected(Message *message, uint32_t conn_handle, uint32_t reason)
+{
+    message->which_msg = Message_ble_tag;
+    message->msg.ble.which_msg = ble_Message_disconnected_tag;
+    message->msg.ble.msg.disconnected.conn_handle = conn_handle;
+    message->msg.ble.msg.disconnected.reason = reason;
 }

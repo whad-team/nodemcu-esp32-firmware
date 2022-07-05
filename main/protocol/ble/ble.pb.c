@@ -81,7 +81,13 @@ PB_BIND(ble_Disconnected, ble_Disconnected, AUTO)
 PB_BIND(ble_Synchronized, ble_Synchronized, AUTO)
 
 
+PB_BIND(ble_Desynchronized, ble_Desynchronized, AUTO)
+
+
 PB_BIND(ble_Hijacked, ble_Hijacked, AUTO)
+
+
+PB_BIND(ble_Injected, ble_Injected, AUTO)
 
 
 PB_BIND(ble_RawPduReceived, ble_RawPduReceived, 2)

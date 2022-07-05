@@ -10,13 +10,14 @@
 #include "esp_system.h"
 
 /* Enable this if you want more verbose messages. */
-#define BLE_HACK_DEBUG        0
+//#define BLE_HACK_DEBUG        0
 
 #define LLC_LLCP_SEND_ADDR        (0x40043ed4)
 #define LLC_LLCP_TESTER_SEND_ADDR (0x400445e4)
 #define LLC_ENV_ADDR              (0x3ffb96d0)
 #define IP_FUNCS_ARRAY_ADDR       (0x3ffae70c)
 #define BLE_RX_BUFFER_ADDR        (0x3ffb0000)
+#define BLE_RX_PKT_STATUS         (0x3ffb094a)
 #define BLE_RX_PKT_HDR_ADDR       (0x3ffb094c)
 #define BLE_RX_CUR_FIFO_ADDR      (0x3ffb8d74)
 #define BLE_RX_DESC_ADDR          (0x3ffb0950)
@@ -551,6 +552,7 @@ int esp_rom_printf( const char *restrict format, ... );
 
 /* Install hooks. */
 void ble_hack_install_hooks(void);
+void disconnect_nimble(void);
 
 void ble_hack_rx_control_pdu_handler(FBLEHACK_IsrCallback pfn_control_callback);
 void ble_hack_rx_data_pdu_handler(FBLEHACK_IsrCallback pfn_data_callback);

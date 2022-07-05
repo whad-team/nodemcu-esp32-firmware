@@ -1,5 +1,6 @@
 #include "inc/ble_hack.h"
 #include "inc/helpers.h"
+#include "esp_bt.h"
 
 /* Callback functions. */
 FBLEHACK_IsrCallback gpfn_on_rx_data_pdu = NULL;
@@ -80,6 +81,8 @@ typedef void (*F_llc_llcp_tester_send)(uint8_t conhdl, uint8_t length, uint8_t *
 F_llc_llcp_tester_send llc_llcp_tester_send = (F_llc_llcp_send)(LLC_LLCP_TESTER_SEND_ADDR);
 
 extern uint32_t r_llc_util_get_nb_active_link(void);
+
+extern void r_em_buf_tx_free(struct em_buf_node *node);
 
 /**
  * co_list_is_empty()
@@ -179,9 +182,11 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
   int rssi;
   int nb_links;
   pkt_hdr_t *p_header = (pkt_hdr_t *)(BLE_RX_PKT_HDR_ADDR);
+  uint16_t pkt_status = *(uint16_t *)(BLE_RX_PKT_STATUS);
   int res;
+  int i,j,k;
   #ifdef BLE_HACK_DEBUG
-  int i;
+  int i,j,k;
   #endif
 
   /* BLE_RX_DESC_ADDR -> array of 12-byte items, the first 2 are offsets. */
@@ -190,15 +195,21 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
   /* We retrieve the fifo index from memory. */
   fifo_index = ((uint8_t *)BLE_RX_CUR_FIFO_ADDR)[0x5c8];
 
+
   /* If we don't have any packet to process, just forward. */
-  if (param_2 == 0)
+  if ((param_2 == 0) || ((pkt_status & 0x13f) != 0))
   {
     return pfn_lld_pdu_rx_handler(param_1, param_2);
   }
 
-  /* Read packet header from fifo header (located at 0x3ffb094c). */
-  pkt_header = p_header[fifo_index].header;
+  for (k=0; k<param_2; k++)
+  {
 
+  j = (fifo_index + k) % 8;
+
+  /* Read packet header from fifo header (located at 0x3ffb094c). */
+  pkt_header = p_header[j].header;
+  
   /* Extract channel, rssi and packet size. */
   channel = (pkt_header>>24);
   rssi = (pkt_header>>16) & 0xff;
@@ -206,12 +217,13 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
 
   if (pkt_size > 0)
   {
-    p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*fifo_index);
+    /* TODO: make sure we get the correct offset */
+    p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*/*fifo_index*/j);
     p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
 
     #ifdef BLE_HACK_DEBUG
     /* Display packet info. */
-    esp_rom_printf("Header: %08x, fifo=%d\n", pkt_header, fifo_index);
+    esp_rom_printf("Header: %08x, fifo=%d\n", pkt_header, /*fifo_index*/j);
     for (i=0; i<pkt_size; i++)
     {
       esp_rom_printf("%02x", p_pdu[i]);
@@ -247,15 +259,17 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
       if (forward == HOOK_FORWARD)
       {
         /* Forward to original handler. */
-        return pfn_lld_pdu_rx_handler(param_1, param_2);
+        //return pfn_lld_pdu_rx_handler(param_1, param_2);
       }
       else
       {
         /* Modify original PDU to set its length to 0. */
-        p_header[fifo_index].header &= 0xffff00ff;
-        return pfn_lld_pdu_rx_handler(param_1, param_2);
+        p_header[j].header &= 0xffff00ff;
+        //return pfn_lld_pdu_rx_handler(param_1, param_2);
       }
     }
+  }
+  
   }
 
   /* Forward to original handler. */
@@ -298,6 +312,13 @@ int _lld_pdu_data_tx_push(struct lld_evt_tag *evt, struct em_desc_node *txnode, 
   int res;
   char dbghex[1024];
   uint8_t *p_buf = (uint8_t *)(p_rx_buffer + txnode->buffer_ptr);
+
+  dbg_txt_rom("evt: 0x%08x", evt);
+  dbg_txt_rom("txnode->llid=0x%02x, txnode->length=%d, txnode->buf_idx=%d, txnode->buf_ptr=0x%08x",
+  txnode->llid,
+  txnode->length,
+  txnode->buffer_idx,
+  txnode->buffer_ptr);
 
 #if 0  
   /* This is for ESP32_WROOM32 only */
@@ -793,6 +814,7 @@ int _lld_pdu_data_send(struct hci_acl_data_tx *param)
   esp_rom_printf("\r\n");
   #endif
   
+  #if 0
   if (gpfn_on_tx_data_pdu != NULL)
   {
     /* Should we block this data PDU ? */
@@ -802,6 +824,7 @@ int _lld_pdu_data_send(struct hci_acl_data_tx *param)
       param->length = 0;
     }
   }
+  #endif
 
   return pfn_lld_pdu_data_send(param);
 }
@@ -832,6 +855,7 @@ struct em_desc_node *em_buf_tx_desc_alloc(void)
     return node;
 }
 
+
 /**
  * send_raw_data_pdu()
  * 
@@ -845,7 +869,9 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool c
 {
   struct em_buf_node* node;
   struct em_desc_node *data_send;
-  struct lld_evt_env *env = (uint32_t *)(*(uint32_t*)((uint32_t)llc_env[conhdl]+0x10) + 0x28);
+  struct lld_evt_tag *env = (struct lld_evt_tag *)(*(uint32_t*)((uint32_t)llc_env[conhdl]+0x10) + 0x28);
+
+  portDISABLE_INTERRUPTS();
 
   /* Allocate data_send. */
   data_send = (struct em_desc_node *)em_buf_tx_desc_alloc();
@@ -862,10 +888,13 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool c
   data_send->buffer_idx = node->idx;
   data_send->buffer_ptr = node->buf_ptr;
 
-  /* Call lld_pdu_data_tx_push */
-  portDISABLE_INTERRUPTS();
+  /* Call lld_pdu_data_tx_push */  
   pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
+
+  env->tx_prog.maxcnt--;
+
   portENABLE_INTERRUPTS();
+
 }
 
 
@@ -921,7 +950,6 @@ void send_control_pdu(int conhdl, uint8_t *p_pdu, int length)
   llc_llcp_send(conhdl, p_pdu, p_pdu[0]);
 }
 
-
 /**
  * ble_hack_install_hooks()
  * 
@@ -936,7 +964,7 @@ void ble_hack_install_hooks(void)
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_rx_handler, (uint32_t)_lld_pdu_rx_handler);
   #endif
   r_btdm_option_data[615] = (uint32_t *)_lld_pdu_rx_handler;
-
+  //g_bt_plf_log_level=10;
 #if 0
   /* Hook r_lld_pdu_data_send */
   pfn_lld_pdu_data_send = (void *)(((uint32_t *)g_ip_funcs_p)[598]);
@@ -984,7 +1012,6 @@ void ble_hack_install_hooks(void)
   INSTALL_HOOK(510, llc_llcp_length_req_pdu_send)
   INSTALL_HOOK(511, llc_llcp_length_rsp_pdu_send)
   INSTALL_HOOK(512, llc_llcp_tester_send)
-
 }
 
 /**

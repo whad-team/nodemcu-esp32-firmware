@@ -7,6 +7,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
+#include "nimble/ble.h"
 #include "host/util/util.h"
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
@@ -17,6 +18,8 @@ static int blecent_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t peer_addr[6];
 static uint8_t null_bd_addr[6] = {0};
 
+extern struct ble_hs_conn;
+extern struct ble_hs_conn *ble_hs_conn_find(uint16_t handle);
 
 static adapter_t g_adapter;
 static DeviceCapability g_adapter_cap[] = {
@@ -60,6 +63,7 @@ void adapter_init(void)
 
     nimble_port_init();
     
+    
     /* Configure the host. */
     ble_hs_cfg.reset_cb = blecent_on_reset;
     ble_hs_cfg.sync_cb = blecent_on_sync;
@@ -78,7 +82,6 @@ void adapter_init(void)
 
     dbg_txt("Start BLE host task");
     nimble_port_freertos_init(blecent_host_task);
-    
 
 }
 
@@ -314,7 +317,7 @@ blecent_scan(void)
                     rc);
     }
 
-    dbg_txt("GAP discovery initiated.");
+    dbg_txt("GAP discovery initiated (mode: %d).", g_adapter.state);
 }
 
 /**
@@ -529,7 +532,6 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                 MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
                 return 0;
             }
-
         } else {
             /* Connection attempt failed; resume scanning. */
             MODLOG_DFLT(ERROR, "Error: Connection failed; status=%d\n",
@@ -549,6 +551,8 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         /* Forget about peer. */
         peer_delete(event->disconnect.conn.conn_handle);
 
+        adapter_on_notify_disconnected();
+        g_adapter.conn_handle = -1;
         g_adapter.conn_state = DISCONNECTED;
 
         /* Resume scanning. */
@@ -642,9 +646,48 @@ static void blecent_host_task(void *param)
 
 int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
-  dbg_txt_rom("[ble:rx:ctl] got %d bytes", length);
-  
-  return HOOK_FORWARD;
+  Message pdu;
+
+  if (g_adapter.conn_state != CONNECTED)
+    return HOOK_FORWARD;
+
+  /**
+   * We need to forward the following Control PDU (time-sensitive) to the NimBLE
+   * stack. These PDUs won't be forwarded to the host as it may trigger a reaction
+   * that would interfere with our NimBLE stack.
+   *
+   * - CONNECTION_UPDATE_REQ
+   * - CHANNEL_MAP_REQ
+   * - FEATURE_REQ
+   * - FEATURE_RSP
+   * - CONNECTION_PARAM_REQ
+   * - CONNECTION_PARAM_RSP
+   * - LENGTH_REQ
+   * - LENGTH_RSP
+   */
+  if (
+    (p_pdu[0] == 0x00) || // CONNECTION_UPDATE_REQ
+    (p_pdu[0] == 0x01) || // CHANNEL_MAP_REQ
+    (p_pdu[0] == 0x02) || // TERMINATE_IND
+    (p_pdu[0] == 0x08) || // FEATURE_REQ
+    (p_pdu[0] == 0x09) || // FEATURE_RSP
+    (p_pdu[0] == 0x0E) || // SLAVE_FEATURE_REQ
+    (p_pdu[0] == 0x0F) || // CONNECTION_PARAM_REQ
+    (p_pdu[0] == 0x10) || // CONNECTION_PARAM_RSP
+    (p_pdu[0] == 0x14) || // LENGTH_REQ
+    (p_pdu[0] == 0x15)    // LENGTH_RSP
+  )
+  {
+    //whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, true);
+    //pending_pb_message(&pdu);
+    return HOOK_FORWARD;
+  }
+  else
+  {
+    whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, false);
+    pending_pb_message(&pdu);
+    return HOOK_BLOCK;
+  }
 }
 
 int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
@@ -653,10 +696,15 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   to the underlying BLE stack as it is not used in our case. */
   Message pdu;
 
-  whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER);
-  pending_pb_message(&pdu);
+  if (g_adapter.conn_state == CONNECTED)
+  {
+    whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, false);
+    pending_pb_message(&pdu);
 
-  return HOOK_FORWARD;
+    return HOOK_BLOCK;
+  }
+  else
+    return HOOK_FORWARD;
 }
 
 /* This handler SHALL NOT be called, as the underlying BLE stack is not supposed
@@ -666,21 +714,48 @@ int ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
   Message pdu;
+  
+  if (g_adapter.conn_state == CONNECTED)
+  {
+    whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_MASTER_TO_SLAVE, g_adapter.conn_handle, true);
+    pending_pb_message(&pdu); 
+  }
 
-  whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_MASTER_TO_SLAVE);
-  pending_pb_message(&pdu);
-
-  return HOOK_FORWARD;
+  return HOOK_FORWARD;  
 }
 
 int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
 {
-  dbg_txt_rom("[ble:tx:ctl] sent 0x%02x opcode", p_llcp_pdu->opcode);
-  return HOOK_FORWARD;
+  //dbg_txt_rom("[ble:tx:ctl] sent 0x%02x opcode", p_llcp_pdu->opcode);
+  /* Rebuild a data PDU and send it to the host. We don't need to forward this
+  to the underlying BLE stack as it is not used in our case. */
+  
+  /* 
+   * Only let LL_FEATURE_RSP, LL_FEATURE_REQ, LL_CONNECTION_PARAM_REQ, 
+   * LL_CONNECTION_PARAM_RSP, LL_PING_REQ, LL_PING_RSP, LL_LENGTH_REQ,
+   * LL_LENGTH_RSP.
+   */
+  if ((p_llcp_pdu->opcode == 0x00) ||
+      (p_llcp_pdu->opcode == 0x08) ||
+      (p_llcp_pdu->opcode == 0x09) ||
+      (p_llcp_pdu->opcode == 0x0F) ||
+      (p_llcp_pdu->opcode == 0x10) ||
+      (p_llcp_pdu->opcode == 0x11) ||
+      (p_llcp_pdu->opcode == 0x12) ||
+      (p_llcp_pdu->opcode == 0x13) ||
+      (p_llcp_pdu->opcode == 0x14) ||
+      (p_llcp_pdu->opcode == 0x15)
+  )
+  {
+      return HOOK_FORWARD;
+  }
+  else
+      return HOOK_BLOCK;
 }
 
 void adapter_quit_state(adapter_state_t state)
 {
+    int res;
     switch (state)
     {
         case OBSERVER:
@@ -697,19 +772,30 @@ void adapter_quit_state(adapter_state_t state)
                 /* Stop advertising if required. */
                 if (ble_gap_adv_active())
                 {
+                    dbg_txt("adv stop");
                     /* Stop advertising. */
                     ble_gap_adv_stop();
                 }
-                else if (ble_gap_conn_active())
+                else
                 {
                     /* Terminate connection. */
-                    ble_gap_terminate(g_adapter.conn_handle, 3);
+                    //res = ble_gap_terminate(g_adapter.conn_handle, 0x13);
+                    //dbg_txt("terminate connection: %d (%d)", res, g_adapter.conn_handle);
+                    
+                    /* Force disconnect. */
+                    send_raw_data_pdu(
+                        g_adapter.conn_handle,
+                        0x03,
+                        "\x02\x13",
+                        2,
+                        false
+                    );
                 }
 
-                /* Reset target address. */
+                /* Wait for the BLE stack to be disconnected. */
                 memset(g_adapter.target_dev_addr, 0, 6);
                 g_adapter.conn_state = DISCONNECTED;
-                g_adapter.conn_handle = 0;
+                g_adapter.conn_handle = -1;
             }
 
         default:
@@ -832,7 +918,15 @@ void adapter_on_notify_connected(void)
 {
     Message notification;
 
-    whad_ble_notify_connected(&notification);
+    whad_ble_notify_connected(&notification, g_adapter.conn_handle);
+    send_pb_message(&notification);
+}
+
+void adapter_on_notify_disconnected(void)
+{
+    Message notification;
+
+    whad_ble_notify_disconnected(&notification, g_adapter.conn_handle, 0);
     send_pb_message(&notification);
 }
 
@@ -1002,6 +1096,10 @@ void adapter_on_stop(ble_StartCmd *stop)
                 /* Terminate connection. */
                 ble_gap_terminate(g_adapter.conn_handle, 3);
             }
+
+            /* Success. */
+            whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+            send_pb_message(&cmd_result);
         }
         break;
 
@@ -1017,6 +1115,8 @@ void adapter_on_stop(ble_StartCmd *stop)
 void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
 {
     Message cmd_result;
+    struct ble_hs_conn *conn;
+    uint16_t *pkt_count;
 
     if ((g_adapter.state == CENTRAL) && (g_adapter.conn_state == CONNECTED))
     {
@@ -1026,8 +1126,16 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
             send_pdu->pdu.bytes[0],
             &send_pdu->pdu.bytes[2],
             send_pdu->pdu.bytes[1],
-            false
+            true
         );
+
+        /* Update connection packets. */
+        conn = ble_hs_conn_find(g_adapter.conn_handle);
+        if (conn != NULL)
+        {
+            pkt_count = (uint16_t *)(((uint8_t *)conn) + 56);
+            (*pkt_count)++;
+        }
 
         /* Success ! */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);

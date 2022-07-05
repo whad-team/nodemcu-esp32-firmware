@@ -46,14 +46,17 @@ void whad_ble_data_pdu(
     ble_BleDirection direction
 );
 
-void whad_ble_notify_connected(Message *message);
+void whad_ble_notify_connected(Message *message, uint32_t conn_handle);
+void whad_ble_notify_disconnected(Message *message, uint32_t conn_handle, uint32_t reason);
 
 void whad_ble_ll_data_pdu(
     Message *message,
     uint16_t header,
     uint8_t *p_pdu,
     int length,
-    ble_BleDirection direction
+    ble_BleDirection direction,
+    int conn_handle,
+    bool processed
 );
 void whad_generic_cmd_result(
     Message *message,
