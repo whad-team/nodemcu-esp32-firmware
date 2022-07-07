@@ -891,7 +891,7 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool c
   /* Call lld_pdu_data_tx_push */  
   pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
 
-  env->tx_prog.maxcnt--;
+  //env->tx_prog.maxcnt--;
 
   portENABLE_INTERRUPTS();
 
