@@ -1379,7 +1379,7 @@ void adapter_on_set_speed(discovery_SetTransportSpeed *speed)
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
         send_pb_message(&cmd_result);
 
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
 
         /* Reconfigure UART0 */
         reconfigure_uart(speed->speed, false);
