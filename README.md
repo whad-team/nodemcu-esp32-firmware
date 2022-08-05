@@ -16,4 +16,4 @@ Building the firmware
 ---------------------
 
 Use the latest version of ESP-IDF, installation and usage described in their
-`getting started documentation <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html>`_.
+[getting started documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html).
