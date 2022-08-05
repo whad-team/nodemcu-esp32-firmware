@@ -41,7 +41,7 @@ app_main(void)
     uint8_t buffer[128];
     Message message_in = Message_init_default;
 
-    reconfigure_uart();
+    reconfigure_uart(115200, true);
     dbg_txt("[system] UART0 reconfigured\r\n");
 
     adapter_init();

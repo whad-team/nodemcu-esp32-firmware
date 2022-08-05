@@ -13,6 +13,7 @@ idf_component_register(
     "nanopb/pb_encode.c"
     "protocol/device.pb.c"
     "protocol/ble/ble.pb.c"
+    "protocol/zigbee/zigbee.pb.c"
     "protocol/generic.pb.c"
     "protocol/whad.pb.c"
     "protocol/whad.c"

@@ -20,20 +20,25 @@ static uint8_t null_bd_addr[6] = {0};
 
 extern struct ble_hs_conn;
 extern struct ble_hs_conn *ble_hs_conn_find(uint16_t handle);
+extern int r_lld_util_set_bd_address(uint8_t *p_bd_addr, uint32_t addr_type);
+extern uint8_t g_dev_address[6];
 
 static adapter_t g_adapter;
 static DeviceCapability g_adapter_cap[] = {
-    {discovery_Domain_BtLE, discovery_Capability_SlaveRole | discovery_Capability_MasterRole | discovery_Capability_Inject},
+    {discovery_Domain_BtLE, discovery_Capability_SlaveRole | discovery_Capability_MasterRole | discovery_Capability_Inject | discovery_Capability_NoRawData},
     {0, 0}
 };
 static uint64_t g_ble_supported_commands = (
+    (1 << ble_BleCommand_AdvMode) |
+    (1 << ble_BleCommand_PeripheralMode) |
     (1 << ble_BleCommand_ScanMode) |
     (1 << ble_BleCommand_CentralMode) |
     (1 << ble_BleCommand_ConnectTo) |
     (1 << ble_BleCommand_Disconnect) |
     (1 << ble_BleCommand_SendPDU) |
     (1 << ble_BleCommand_Start) |
-    (1 << ble_BleCommand_Stop)
+    (1 << ble_BleCommand_Stop) |
+    (1 << ble_BleCommand_SetBdAddress)
 );
 
 static int blecent_gap_event(struct ble_gap_event *event, void *arg);
@@ -44,7 +49,21 @@ void ble_store_config_init(void);
 
 void adapter_init(void)
 {
+    uint8_t mac_addr[6];
+    Message msg;
     int rc;
+
+    /* Generate device name based on MAC */
+    esp_read_mac(mac_addr, ESP_MAC_BT);
+    snprintf(
+        (char *)g_adapter.dev_name,
+        16,
+        "esp32_%02x%02x%02x",
+        mac_addr[3],
+        mac_addr[4],
+        mac_addr[5]
+    );
+
 
     /* By default, non-connected and act as an observer. */
     g_adapter.state = OBSERVER;
@@ -63,6 +82,15 @@ void adapter_init(void)
 
     nimble_port_init();
     
+    /* Initialize advertising data. */
+    memset(g_adapter.adv_data, 0, 31);
+    g_adapter.adv_data_length = 0;
+    memset(g_adapter.adv_rsp_data, 0, 31);
+    g_adapter.adv_rsp_data_length = 0;
+
+    /* Initialize BD address spoofing. */
+    memset(g_adapter.my_dev_addr, 0, 6);
+    g_adapter.b_spoof_addr = false;
     
     /* Configure the host. */
     ble_hs_cfg.reset_cb = blecent_on_reset;
@@ -82,6 +110,10 @@ void adapter_init(void)
 
     dbg_txt("Start BLE host task");
     nimble_port_freertos_init(blecent_host_task);
+
+    /* Adapter is ready now ! */
+    whad_discovery_ready_resp(&msg);
+    send_pb_message(&msg);
 
 }
 
@@ -381,6 +413,11 @@ blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
         return;
     }
 
+    /*
+     * Update BD address just before connecting.
+     */
+    
+
     /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
      * timeout.
      */
@@ -392,6 +429,11 @@ blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
                     "addr=%s; rc=%d\n",
                     disc->addr.type, addr_str(disc->addr.val), rc);
         return;
+    }
+
+    if (g_adapter.b_spoof_addr)
+    {
+        r_lld_util_set_bd_address(g_adapter.my_dev_addr, 0);
     }
 }
 
@@ -512,33 +554,36 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_CONNECT:
-        /* A new connection was established or a connection attempt failed. */
-        if (event->connect.status == 0) {
-            dbg_txt("[nimble] connection established\r\n");
-            
-            g_adapter.conn_handle = event->connect.conn_handle;
-            g_adapter.conn_state = CONNECTED;
+        /* Connection is only allowed when in peripheral or central mode. */
+        if ((g_adapter.state == PERIPHERAL) || (g_adapter.state == CENTRAL) )
+        {
+            /* A new connection was established or a connection attempt failed. */
+            if (event->connect.status == 0) {
+                dbg_txt("[nimble] connection established\r\n");
+                
+                g_adapter.conn_handle = event->connect.conn_handle;
+                g_adapter.conn_state = CONNECTED;
 
-            adapter_on_notify_connected();
+                adapter_on_notify_connected();
 
-            rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-            assert(rc == 0);
-            print_conn_desc(&desc);
-            MODLOG_DFLT(INFO, "\n");
+                rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
+                assert(rc == 0);
+                print_conn_desc(&desc);
+                MODLOG_DFLT(INFO, "\n");
 
-            /* Remember peer. */
-            rc = peer_add(event->connect.conn_handle);
-            if (rc != 0) {
-                MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
-                return 0;
+                /* Remember peer. */
+                rc = peer_add(event->connect.conn_handle);
+                if (rc != 0) {
+                    MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
+                    return 0;
+                }
+            } else {
+                /* Connection attempt failed; resume scanning. */
+                MODLOG_DFLT(ERROR, "Error: Connection failed; status=%d\n",
+                            event->connect.status);
+                blecent_scan();
             }
-        } else {
-            /* Connection attempt failed; resume scanning. */
-            MODLOG_DFLT(ERROR, "Error: Connection failed; status=%d\n",
-                        event->connect.status);
-            blecent_scan();
         }
-
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
@@ -555,8 +600,15 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         g_adapter.conn_handle = -1;
         g_adapter.conn_state = DISCONNECTED;
 
-        /* Resume scanning. */
-        blecent_scan();
+        if (g_adapter.state == CENTRAL)
+        {
+            /* Resume scanning. */
+            blecent_scan();
+        }
+        else if (g_adapter.state == PERIPHERAL)
+        {
+            ble_advertise();
+        }
         return 0;
 
     case BLE_GAP_EVENT_DISC_COMPLETE:
@@ -610,6 +662,14 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
          * continue with the pairing operation.
          */
         return BLE_GAP_REPEAT_PAIRING_RETRY;
+
+    case BLE_GAP_EVENT_ADV_COMPLETE:
+        if ( (g_adapter.state == PERIPHERAL) || (g_adapter.state == BROADCASTER) )
+        {
+            /* Restart advertising. */
+            ble_advertise();
+        }
+        return 0;
 
     default:
         return 0;
@@ -684,7 +744,15 @@ int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
   }
   else
   {
-    whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, false);
+    whad_ble_ll_data_pdu(
+        &pdu,
+        header,
+        p_pdu,
+        length,
+        (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+        g_adapter.conn_handle,
+        false
+    );
     pending_pb_message(&pdu);
     return HOOK_BLOCK;
   }
@@ -698,7 +766,15 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 
   if (g_adapter.conn_state == CONNECTED)
   {
-    whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, false);
+    whad_ble_ll_data_pdu(
+        &pdu,
+        header,
+        p_pdu,
+        length,
+        (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+        g_adapter.conn_handle,
+        false
+    );
     pending_pb_message(&pdu);
 
     return HOOK_BLOCK;
@@ -717,7 +793,15 @@ int ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   
   if (g_adapter.conn_state == CONNECTED)
   {
-    whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_MASTER_TO_SLAVE, g_adapter.conn_handle, true);
+    whad_ble_ll_data_pdu(
+        &pdu,
+        header,
+        p_pdu,
+        length,
+        (g_adapter.state == CENTRAL)?ble_BleDirection_MASTER_TO_SLAVE:ble_BleDirection_SLAVE_TO_MASTER,
+        g_adapter.conn_handle,
+        true
+    );
     pending_pb_message(&pdu); 
   }
 
@@ -751,6 +835,39 @@ int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
   }
   else
       return HOOK_BLOCK;
+}
+
+void ble_advertise(void)
+{
+    int rc;
+    struct ble_gap_adv_params adv_params;
+
+    /* Update advertising and scan response data. */
+    if (g_adapter.adv_data_length > 0)
+    {
+        ble_gap_adv_set_data(g_adapter.adv_data, g_adapter.adv_data_length);
+    }
+
+    if (g_adapter.adv_rsp_data_length > 0)
+    {
+        ble_gap_adv_rsp_set_data(g_adapter.adv_rsp_data, g_adapter.adv_rsp_data_length);
+    }
+
+    /* Set advertising parameters. */
+    memset(&adv_params, 0, sizeof adv_params);
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; /* Undirected */
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN; /* General discovery mode */
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
+                           &adv_params, blecent_gap_event, NULL);
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "error enabling advertisement; rc=%d\n", rc);
+        return;
+    }
+
+    if (g_adapter.b_spoof_addr)
+    {
+        r_lld_util_set_bd_address(g_adapter.my_dev_addr, 0);
+    }
 }
 
 void adapter_quit_state(adapter_state_t state)
@@ -788,7 +905,7 @@ void adapter_quit_state(adapter_state_t state)
                         0x03,
                         "\x02\x13",
                         2,
-                        false
+                        true
                     );
                 }
 
@@ -797,6 +914,15 @@ void adapter_quit_state(adapter_state_t state)
                 g_adapter.conn_state = DISCONNECTED;
                 g_adapter.conn_handle = -1;
             }
+            break;
+
+        case PERIPHERAL:
+        case BROADCASTER:
+            {
+                /* Stop advertising. */
+                ble_gap_adv_stop();
+            }
+            break;
 
         default:
             break;
@@ -818,6 +944,14 @@ adapter_state_t adapter_enter_state(adapter_state_t state)
             {
                 /* Reset target address. */
                 memset(g_adapter.target_dev_addr, 0, 6);
+            }
+            break;
+
+        case PERIPHERAL:
+        case BROADCASTER:
+            {
+                /* Start advertising. */
+                ble_advertise();
             }
             break;
 
@@ -855,7 +989,11 @@ void adapter_on_device_info_req(discovery_DeviceInfoQuery *query)
     whad_discovery_device_info_resp(
         &reply,
         discovery_DeviceType_Esp32BleFuzzer,
+        g_adapter.dev_name,
         0x0100,
+        460800, /* Max speed on UART */
+        FIRMWARE_AUTHOR,
+        FIRMWARE_URL,
         1,
         0,
         0,
@@ -945,6 +1083,64 @@ void adapter_on_sniff_adv(ble_SniffAdvCmd *sniff_adv)
     {
         whad_init_error_message(&cmd_result, generic_ResultCode_ERROR);
         send_pb_message(&cmd_result);
+    }
+}
+
+void adapter_on_enable_adv(ble_AdvModeCmd *adv_mode)
+{
+    Message cmd_result;
+
+    /* Update advertising data and scan response data if provided. */
+    if ( (adv_mode->scan_data.size > 0) && (adv_mode->scan_data.size <= 31) )
+    {
+        g_adapter.adv_data_length = adv_mode->scan_data.size;
+        memcpy(g_adapter.adv_data, adv_mode->scan_data.bytes, adv_mode->scan_data.size);
+    }
+    if ( (adv_mode->scanrsp_data.size > 0) && (adv_mode->scanrsp_data.size <= 31) )
+    {
+        g_adapter.adv_rsp_data_length = adv_mode->scanrsp_data.size;
+        memcpy(g_adapter.adv_rsp_data, adv_mode->scanrsp_data.bytes, adv_mode->scanrsp_data.size);
+    }
+
+    /* Switch to advertising mode. */
+    if (adapter_set_state(BROADCASTER))
+    {
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+    }
+    else
+    {
+        whad_init_error_message(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);        
+    }
+}
+
+void adapter_on_enable_peripheral(ble_PeripheralModeCmd *periph_mode)
+{
+    Message cmd_result;
+
+    /* Update advertising data and scan response data if provided. */
+    if ( (periph_mode->scan_data.size > 0) && (periph_mode->scan_data.size <= 31) )
+    {
+        g_adapter.adv_data_length = periph_mode->scan_data.size;
+        memcpy(g_adapter.adv_data, periph_mode->scan_data.bytes, periph_mode->scan_data.size);
+    }
+    if ( (periph_mode->scanrsp_data.size > 0) && (periph_mode->scanrsp_data.size <= 31) )
+    {
+        g_adapter.adv_rsp_data_length = periph_mode->scanrsp_data.size;
+        memcpy(g_adapter.adv_rsp_data, periph_mode->scanrsp_data.bytes, periph_mode->scanrsp_data.size);
+    }
+
+    /* Switch to advertising mode. */
+    if (adapter_set_state(PERIPHERAL))
+    {
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+    }
+    else
+    {
+        whad_init_error_message(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);        
     }
 }
 
@@ -1118,7 +1314,10 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
     struct ble_hs_conn *conn;
     uint16_t *pkt_count;
 
-    if ((g_adapter.state == CENTRAL) && (g_adapter.conn_state == CONNECTED))
+    if (
+        ((g_adapter.state == CENTRAL) || (g_adapter.state == PERIPHERAL)) &&
+        (g_adapter.conn_state == CONNECTED)
+    )
     {
         /* Send PDU. */
         send_raw_data_pdu(
@@ -1143,6 +1342,51 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
     }
     else
     {
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);   
+    }
+}
+
+
+void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr)
+{
+    Message cmd_result;
+
+    //r_lld_util_set_bd_address((uint8_t *)bd_addr->bd_address, 0);
+    memcpy(g_adapter.my_dev_addr, bd_addr->bd_address, 6);
+    g_adapter.b_spoof_addr = true;
+
+    /* Success ! */
+    whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+    send_pb_message(&cmd_result);
+}
+
+void adapter_on_reset(void)
+{
+    Message cmd_result;
+
+    /* Soft reset ! */
+    esp_restart();
+}
+
+void adapter_on_set_speed(discovery_SetTransportSpeed *speed)
+{
+    Message cmd_result;
+    
+    if (speed->speed <= 460800)
+    {
+        /* Send success message. */
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+
+        /* Reconfigure UART0 */
+        reconfigure_uart(speed->speed, false);
+    }
+    else
+    {
+        /* Send error message. */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
         send_pb_message(&cmd_result);   
     }

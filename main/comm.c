@@ -7,7 +7,7 @@ volatile int nb_rx_bytes = 0;
 static uint8_t pb_pending_tx_buffer[1024];
 volatile int nb_pending_bytes = 0;
 
-void reconfigure_uart(void)
+esp_err_t reconfigure_uart(int speed, bool reinstall_driver)
 {
     /**
      * Reconfigure UART0 in order to use it to communicate with our
@@ -15,7 +15,7 @@ void reconfigure_uart(void)
      */
     const uart_port_t uart_num = UART_NUM_0;
     uart_config_t uart_config = {
-      .baud_rate = 115200,
+      .baud_rate = speed,
       .data_bits = UART_DATA_8_BITS,
       .parity = UART_PARITY_DISABLE,
       .stop_bits = UART_STOP_BITS_1,
@@ -23,8 +23,9 @@ void reconfigure_uart(void)
     };
 
     // Configure UART parameters
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
+    uart_driver_delete(UART_NUM_0);
+    uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
+    return uart_param_config(uart_num, &uart_config);
 }
 
 void pending_pb_message(const void *src_struct)

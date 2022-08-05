@@ -13,10 +13,14 @@
 #include "inc/helpers.h"
 #include "inc/ble_hack.h"
 
+#define FIRMWARE_AUTHOR "Damien Cauquil"
+#define FIRMWARE_URL "https://github.com/virtualabs/esp32-fw.git"
+
 /* Adapter state. */
 typedef enum {
     IDLE,
     OBSERVER,
+    BROADCASTER,
     CENTRAL,
     PERIPHERAL
 } adapter_state_t;
@@ -28,14 +32,25 @@ typedef enum {
 } adapter_conn_state_t;
 
 typedef struct {
+    /* Device name (esp32_112233). */
+    uint8_t dev_name[16];
+    
     /* Current state. */
     adapter_state_t state;
     bool active_scan;
+    uint8_t my_dev_addr[6];
+    bool b_spoof_addr;
 
-    /* Target device. */
+    /* Target device (Master mode). */
     uint8_t target_dev_addr[6];
     adapter_conn_state_t conn_state;
     int16_t conn_handle;
+
+    /* Advertising data (Slave mode). */
+    uint8_t adv_data[31];
+    int adv_data_length;
+    uint8_t adv_rsp_data[31];
+    int adv_rsp_data_length;
 
     /* Capabilities. */
     DeviceCapability *capabilities;
@@ -47,6 +62,7 @@ void adapter_init(void);
 static void blecent_host_task(void *param);
 static void blecent_on_reset(int reason);
 static void blecent_on_sync(void);
+void ble_advertise(void);
 
 /* BLE hooks. */
 int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length);
@@ -59,6 +75,8 @@ void adapter_on_unsupported(Message *message);
 void adapter_on_device_info_req(discovery_DeviceInfoQuery *query);
 void adapter_on_domain_info_req(discovery_DeviceDomainInfoQuery *query);
 
+void adapter_on_enable_adv(ble_AdvModeCmd *adv_mode);
+void adapter_on_enable_peripheral(ble_PeripheralModeCmd *periph_mode);
 void adapter_on_enable_scan(ble_ScanModeCmd *scan_mode);
 void adapter_on_enable_central(ble_CentralModeCmd *central_mode);
 void adapter_on_connect(ble_ConnectToCmd *connect);
@@ -77,5 +95,8 @@ void adapter_on_notify_adv(
     uint8_t *p_scan_rsp,
     int scan_rsp_length
 );
+void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr);
+void adapter_on_reset(void);
+void adapter_on_set_speed(discovery_SetTransportSpeed *speed);
 
 #endif /* ADAPTER_INC_H */

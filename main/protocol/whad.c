@@ -94,18 +94,47 @@ bool whad_disc_enum_capabilities_cb(pb_ostream_t *ostream, const pb_field_t *fie
 
 
 void whad_discovery_device_info_resp(
-    Message *message, discovery_DeviceType device_type,
-    uint32_t proto_min_ver, uint32_t fw_version_major,
-    uint32_t fw_version_minor, uint32_t fw_version_rev,
+    Message *message,
+    discovery_DeviceType device_type,
+    uint8_t *devid,
+    uint32_t proto_min_ver,
+    uint32_t max_speed,
+    char *fw_author,
+    char *fw_url,
+    uint32_t fw_version_major,
+    uint32_t fw_version_minor,
+    uint32_t fw_version_rev,
     DeviceCapability *capabilities)
 {
     message->which_msg = Message_discovery_tag;
     message->msg.discovery.which_msg = discovery_Message_info_resp_tag;
     message->msg.discovery.msg.info_resp.proto_min_ver = proto_min_ver;
+    message->msg.discovery.msg.info_resp.max_speed = 460800;
+    if (fw_author != NULL)
+    {
+        strncpy((char *)message->msg.discovery.msg.info_resp.fw_author.bytes, (char *)fw_author, 64);
+        message->msg.discovery.msg.info_resp.fw_author.size = strlen(fw_author);
+    }
+    else
+    {
+        message->msg.discovery.msg.info_resp.fw_author.size = 0;
+    }
+
+    if(fw_url != NULL)
+    {
+        strncpy((char *)message->msg.discovery.msg.info_resp.fw_url.bytes, (char *)fw_url, 256);
+        message->msg.discovery.msg.info_resp.fw_url.size = strlen(fw_url);
+    }
+    else
+    {
+        message->msg.discovery.msg.info_resp.fw_url.size = 0;
+    }
+    
     message->msg.discovery.msg.info_resp.fw_version_major = fw_version_major;
     message->msg.discovery.msg.info_resp.fw_version_minor = fw_version_minor;
     message->msg.discovery.msg.info_resp.fw_version_rev = fw_version_rev;
     message->msg.discovery.msg.info_resp.type = device_type;
+    strncpy((char *)message->msg.discovery.msg.info_resp.devid, (char *)devid, 16);
     message->msg.discovery.msg.info_resp.capabilities.arg = capabilities;
     message->msg.discovery.msg.info_resp.capabilities.funcs.encode = whad_disc_enum_capabilities_cb;
 }
@@ -118,6 +147,12 @@ void whad_discovery_domain_info_resp(
     message->msg.discovery.which_msg = discovery_Message_domain_resp_tag;
     message->msg.discovery.msg.domain_resp.domain = domain;
     message->msg.discovery.msg.domain_resp.supported_commands = supported_commands;
+}
+
+void whad_discovery_ready_resp(Message *message)
+{
+    message->which_msg = Message_discovery_tag;
+    message->msg.discovery.which_msg = discovery_Message_ready_resp_tag;
 }
 
 void whad_ble_adv_pdu(

@@ -16,6 +16,24 @@ void dispatch_message(Message *message)
             {
                 switch (message->msg.ble.which_msg)
                 {
+                    case ble_Message_adv_mode_tag:
+                    {
+                        adapter_on_enable_adv(&message->msg.ble.msg.adv_mode);
+                    }
+                    break;
+
+                    case ble_Message_periph_mode_tag:
+                    {
+                        adapter_on_enable_peripheral(&message->msg.ble.msg.periph_mode);
+                    }
+                    break;
+
+                    case ble_Message_set_adv_data_tag:
+                    {
+                        //adapter_set_adv_data(&message->msg.ble.msg.set_adv_data);
+                    }
+                    break;
+
                     case ble_Message_scan_mode_tag:
                     {
                         /* Forward to adapter. */
@@ -54,6 +72,11 @@ void dispatch_message(Message *message)
                     }
                     break;
 
+                    case ble_Message_set_bd_addr_tag:
+                    {
+                        adapter_on_set_bd_addr(&message->msg.ble.msg.set_bd_addr);
+                    }
+
                     default:
                     {
                         /* Unsupported message. */
@@ -85,6 +108,20 @@ void dispatch_message(Message *message)
                         );
                     }
                     break;
+
+                    case discovery_Message_reset_query_tag:
+                    {
+                        /* Send answer and reset device. */
+                        adapter_on_reset();
+                    }
+
+                    case discovery_Message_set_speed_tag:
+                    {
+                        /* Change UART speed. */
+                        adapter_on_set_speed(
+                            &message->msg.discovery.msg.set_speed
+                        );
+                    }
 
                     default:
                         adapter_on_unsupported(message);

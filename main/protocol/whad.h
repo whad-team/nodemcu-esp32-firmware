@@ -25,7 +25,11 @@ void whad_init_error_message(Message *message, generic_ResultCode error);
 void whad_discovery_device_info_resp(
     Message *message,
     discovery_DeviceType device_type,
+    uint8_t *devid,
     uint32_t proto_min_ver,
+    uint32_t max_speed,
+    char *fw_author,
+    char *fw_url,
     uint32_t fw_version_major,
     uint32_t fw_version_minor,
     uint32_t fw_version_rev,
@@ -34,6 +38,8 @@ void whad_discovery_device_info_resp(
 void whad_discovery_domain_info_resp(
     Message *message, discovery_Domain domain,
     uint64_t supported_commands);
+
+void whad_discovery_ready_resp(Message *message);
 
 void whad_ble_adv_pdu(
     Message *message,

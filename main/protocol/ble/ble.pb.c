@@ -63,7 +63,13 @@ PB_BIND(ble_StartCmd, ble_StartCmd, AUTO)
 PB_BIND(ble_StopCmd, ble_StopCmd, AUTO)
 
 
-PB_BIND(ble_HijackCmd, ble_HijackCmd, AUTO)
+PB_BIND(ble_HijackMasterCmd, ble_HijackMasterCmd, AUTO)
+
+
+PB_BIND(ble_HijackSlaveCmd, ble_HijackSlaveCmd, AUTO)
+
+
+PB_BIND(ble_HijackBothCmd, ble_HijackBothCmd, AUTO)
 
 
 PB_BIND(ble_AccessAddressDiscovered, ble_AccessAddressDiscovered, AUTO)
