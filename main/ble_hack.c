@@ -189,87 +189,91 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
   int i,j,k;
   #endif
 
+
   /* BLE_RX_DESC_ADDR -> array of 12-byte items, the first 2 are offsets. */
   /* p_rx_buffer -> BLE RX/TX shared memory. */
   
-  /* We retrieve the fifo index from memory. */
-  fifo_index = ((uint8_t *)BLE_RX_CUR_FIFO_ADDR)[0x5c8];
-
-
   /* If we don't have any packet to process, just forward. */
   if ((param_2 == 0) || ((pkt_status & 0x13f) != 0))
   {
     return pfn_lld_pdu_rx_handler(param_1, param_2);
   }
 
-  for (k=0; k<param_2; k++)
+  //if ((*((uint8_t *)param_1 + 0x72) & 0x10) == 0)
+  if (1)
   {
+    /* We retrieve the fifo index from memory. */
+    fifo_index = ((uint8_t *)BLE_RX_CUR_FIFO_ADDR)[0x5c8];
 
-  j = (fifo_index + k) % 8;
-
-  /* Read packet header from fifo header (located at 0x3ffb094c). */
-  pkt_header = p_header[j].header;
-  
-  /* Extract channel, rssi and packet size. */
-  channel = (pkt_header>>24);
-  rssi = (pkt_header>>16) & 0xff;
-  pkt_size = (pkt_header >> 8) & 0xff;
-
-  if (pkt_size > 0)
-  {
-    /* TODO: make sure we get the correct offset */
-    p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*/*fifo_index*/j);
-    p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
-
-    #ifdef BLE_HACK_DEBUG
-    /* Display packet info. */
-    esp_rom_printf("Header: %08x, fifo=%d\n", pkt_header, /*fifo_index*/j);
-    for (i=0; i<pkt_size; i++)
+    for (k=0; k<param_2; k++)
     {
-      esp_rom_printf("%02x", p_pdu[i]);
-    }
-    esp_rom_printf("\n");
-    #endif
+        j = (fifo_index + k) % 8;
 
-    /* Maybe not the smarter way to do that ... */
-    nb_links = r_llc_util_get_nb_active_link();
-    if (nb_links > 0)
-    {
-      #ifdef BLE_HACK_DEBUG
-      esp_rom_printf("%d active links\r\n", nb_links);
-      #endif
+        /* Read packet header from fifo header (located at 0x3ffb094c). */
+        pkt_header = p_header[j].header;
+        
+        /* Extract channel, rssi and packet size. */
+        channel = (pkt_header>>24);
+        rssi = (pkt_header>>16) & 0xff;
+        pkt_size = (pkt_header >> 8) & 0xff;
 
-      /* Is it a control PDU ? */
-      if ((pkt_header & 0x03) == 0x3)
-      {
-        if (gpfn_on_rx_control_pdu != NULL)
+        if (pkt_size > 0)
         {
-          forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
-        }
-      }
-      /* Is it a data PDU ? */
-      else if ((pkt_header & 0x03) != 0)
-      {
-        if (gpfn_on_rx_data_pdu != NULL)
-        {
-          forward = gpfn_on_rx_data_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
-        }
-      }
+            /* TODO: make sure we get the correct offset */
+            p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*/*fifo_index*/j);
+            p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
 
-      if (forward == HOOK_FORWARD)
-      {
-        /* Forward to original handler. */
-        //return pfn_lld_pdu_rx_handler(param_1, param_2);
-      }
-      else
-      {
-        /* Modify original PDU to set its length to 0. */
-        p_header[j].header &= 0xffff00ff;
-        //return pfn_lld_pdu_rx_handler(param_1, param_2);
-      }
+            #ifdef BLE_HACK_DEBUG
+            /* Display packet info. */
+            esp_rom_printf("Header: %08x, fifo=%d\n", pkt_header, /*fifo_index*/j);
+            for (i=0; i<pkt_size; i++)
+            {
+            esp_rom_printf("%02x", p_pdu[i]);
+            }
+            esp_rom_printf("\n");
+            #endif
+
+            /* Maybe not the smarter way to do that ... */
+            nb_links = r_llc_util_get_nb_active_link();
+            if (nb_links > 0)
+            {
+            #ifdef BLE_HACK_DEBUG
+            esp_rom_printf("%d active links\r\n", nb_links);
+            #endif
+
+            /* Is it a control PDU ? */
+            if ((pkt_header & 0x03) == 0x3)
+            {
+                if (gpfn_on_rx_control_pdu != NULL)
+                {
+                    forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xff03), p_pdu, (pkt_header>>8)&0xff);
+                }
+            }
+            /* Is it a data PDU ? */
+            else         
+            
+            if ((pkt_header & 0x03) != 0)
+            {
+                if (gpfn_on_rx_data_pdu != NULL)
+                {
+                    forward = gpfn_on_rx_data_pdu((uint16_t)(pkt_header & 0xff03), p_pdu, (pkt_header>>8)&0xff);
+                }
+            }
+
+            if (forward == HOOK_FORWARD)
+            {
+                /* Forward to original handler. */
+                //return pfn_lld_pdu_rx_handler(param_1, param_2);
+            }
+            else
+            {
+                /* Modify original PDU to set its length to 0. */
+                p_header[j].header &= 0xffff00ff;
+                //return pfn_lld_pdu_rx_handler(param_1, param_2);
+            }
+        }
+      }  
     }
-  }
-  
   }
 
   /* Forward to original handler. */
@@ -581,7 +585,7 @@ void _llc_llcp_con_param_rsp_pdu_send(uint16_t conhdl, struct llc_con_upd_req_in
     HOOKFUNCPTR(llc_llcp_con_param_rsp_pdu_send)(conhdl, param);
 }
 
-void _llc_llcp_feats_req_pdu_send(uint16_t conhdl)
+int _llc_llcp_feats_req_pdu_send(uint16_t conhdl)
 {
   int forward = HOOK_FORWARD;
   llcp_feats_req_params params;
@@ -599,6 +603,8 @@ void _llc_llcp_feats_req_pdu_send(uint16_t conhdl)
 
   if (forward == HOOK_FORWARD)
     HOOKFUNCPTR(llc_llcp_feats_req_pdu_send)(conhdl);
+
+ return conhdl;
 }
 
 void _llc_llcp_feats_rsp_pdu_send(uint32_t conhdl)
@@ -965,14 +971,13 @@ void ble_hack_install_hooks(void)
   #endif
   r_btdm_option_data[615] = (uint32_t *)_lld_pdu_rx_handler;
   //g_bt_plf_log_level=10;
-#if 0
+
   /* Hook r_lld_pdu_data_send */
   pfn_lld_pdu_data_send = (void *)(((uint32_t *)g_ip_funcs_p)[598]);
   #ifdef BLE_HACK_DEBUG
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_data_send, (uint32_t)_lld_pdu_data_send);
   #endif
   ((uint32_t *)g_ip_funcs_p)[598] = (uint32_t)_lld_pdu_data_send;
-#endif
 
   /* Hook r_lld_pdu_tx_prog */
   pfn_lld_pdu_tx_prog = (void *)(((uint32_t *)g_ip_funcs_p)[600]);

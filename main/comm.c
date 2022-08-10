@@ -1,10 +1,11 @@
 #include "inc/comm.h"
+#include "inc/helpers.h"
 
 static uint8_t pb_tx_buffer[1024];
 static uint8_t pb_rx_buffer[1024];
 volatile int nb_rx_bytes = 0;
 
-static uint8_t pb_pending_tx_buffer[1024];
+static uint8_t pb_pending_tx_buffer[10*1024];
 volatile int nb_pending_bytes = 0;
 
 esp_err_t reconfigure_uart(int speed, bool reinstall_driver)
@@ -57,6 +58,7 @@ void flush_pending_pb_messages(void)
 {
     if (nb_pending_bytes > 0)
     {
+        dbg_txt("pending bytes: %d", nb_pending_bytes);
         uart_write_bytes(UART_NUM_0, pb_pending_tx_buffer, nb_pending_bytes);
         nb_pending_bytes = 0;
     }

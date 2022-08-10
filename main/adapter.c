@@ -70,6 +70,11 @@ void adapter_init(void)
     g_adapter.capabilities = g_adapter_cap;
     g_adapter.active_scan = false;
 
+    /* Initialize L2CAP filtering mechanism. */
+    g_adapter.b_l2cap_started = false;
+    g_adapter.l2cap_pkt_size = 0;
+    g_adapter.l2cap_recv_bytes = 0;
+
     /* Initialize NVS — it is used to store PHY calibration data */
     esp_err_t ret = nvs_flash_init();
     if  (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -108,7 +113,7 @@ void adapter_init(void)
     /* XXX Need to have template for store */
     ble_store_config_init();
 
-    dbg_txt("Start BLE host task");
+    //dbg_txt("Start BLE host task");
     nimble_port_freertos_init(blecent_host_task);
 
     /* Adapter is ready now ! */
@@ -740,6 +745,7 @@ int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
   {
     //whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, true);
     //pending_pb_message(&pdu);
+    //dbg_txt_rom("(rx ctl) forward pdu %02x", p_pdu[0]);
     return HOOK_FORWARD;
   }
   else
@@ -763,19 +769,103 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
   Message pdu;
+  uint16_t *p_l2cap_channel, *p_l2cap_pkt_size;
+  bool b_valid_pkt = false;
 
-  if (g_adapter.conn_state == CONNECTED)
+  if (
+    (g_adapter.conn_state == CONNECTED) && 
+    ( (g_adapter.state == CENTRAL) || (g_adapter.state == PERIPHERAL) )
+  )
   {
-    whad_ble_ll_data_pdu(
-        &pdu,
-        header,
-        p_pdu,
-        length,
-        (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-        g_adapter.conn_handle,
-        false
-    );
-    pending_pb_message(&pdu);
+    /** 
+     * L2CAP layer tracking.
+     * 
+     * This feature has been implemented to avoid some noise packets
+     * reported by r_lld_rx_pdu_handler().
+     **/
+
+    /* Valid BLE L2CAP packet is at least 6 bytes (2-byte BLE DATA header + 4-byte L2CAP header) */
+    if (length >= 6)
+    {
+        p_l2cap_channel = &p_pdu[2];
+        p_l2cap_pkt_size = &p_pdu[0];
+
+        //dbg_txt_rom("[l2cap] pdu size %d, l2cap size: %d, channel: %d", length, *p_l2cap_pkt_size,*p_l2cap_channel);
+
+        /* Do we have a DATA start fragment ? */
+        if ((header & 0x03) == 0x02)
+        {
+            //dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
+            if (!g_adapter.b_l2cap_started)
+            {
+                /* Make sure L2CAP header has the correct channel (attribute). */
+                if (*p_l2cap_channel == 0x04)
+                {
+                    /* L2CAP start fragment received, save expected size. */
+                    g_adapter.b_l2cap_started = true;
+                    g_adapter.l2cap_pkt_size = *p_l2cap_pkt_size;
+                    g_adapter.l2cap_recv_bytes = length - 4; /* information payload size */
+
+                    if (g_adapter.l2cap_recv_bytes == g_adapter.l2cap_pkt_size)
+                    {
+                        /* Packet is complete. */
+                        g_adapter.b_l2cap_started = false;
+                        //_rom("[l2cap] received complete fragment");
+                    }
+                    else
+                    {
+                        //dbg_txt_rom("[l2cap] received start fragment");
+                    }
+                }
+
+                /* Packet is valid. */
+                b_valid_pkt = true;
+            }
+        }
+        /* Do we have a DATA continue fragment ? */
+        else if ((header & 0x03) == 0x01)
+        {
+            //dbg_txt_rom("[l2cap] continue fragment received (state=%d)", g_adapter.b_l2cap_started);
+            /* Only accept this fragment after a start fragment has been received. */
+            if (g_adapter.b_l2cap_started)
+            {
+                //dbg_txt_rom("[l2cap] received continue fragment");
+
+                /* Do we have received a complete L2CAP packet ? */
+                g_adapter.l2cap_recv_bytes += (length - 4); /* information payload size. */
+                if (g_adapter.l2cap_recv_bytes >= g_adapter.l2cap_pkt_size)
+                {
+                    //dbg_txt_rom("[l2cap] packet is complete");
+
+                    /* Yes, next packet shall be a start fragment. */
+                    g_adapter.b_l2cap_started = false;
+                    g_adapter.l2cap_pkt_size = 0;
+                    g_adapter.l2cap_recv_bytes = 0;
+                }
+                else
+                {
+                    //dbg_txt_rom("[l2cap] packet continuation %d/%d", g_adapter.l2cap_recv_bytes, g_adapter.l2cap_pkt_size);
+                }
+
+                /* Packet is valid. */
+                b_valid_pkt = true;
+            }
+        }
+
+        if (b_valid_pkt)
+        {
+            whad_ble_ll_data_pdu(
+                &pdu,
+                header,
+                p_pdu,
+                length,
+                (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+                g_adapter.conn_handle,
+                false
+            );
+            pending_pb_message(&pdu);
+        }
+    }
 
     return HOOK_BLOCK;
   }
@@ -820,6 +910,7 @@ int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
    * LL_LENGTH_RSP.
    */
   if ((p_llcp_pdu->opcode == 0x00) ||
+      (p_llcp_pdu->opcode == 0x01) ||
       (p_llcp_pdu->opcode == 0x08) ||
       (p_llcp_pdu->opcode == 0x09) ||
       (p_llcp_pdu->opcode == 0x0F) ||
@@ -831,10 +922,14 @@ int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
       (p_llcp_pdu->opcode == 0x15)
   )
   {
+    //dbg_txt_rom("(tx ctl) forward pdu %02x", p_llcp_pdu->opcode);
       return HOOK_FORWARD;
   }
   else
+  {
+    //dbg_txt_rom("(tx ctl) block pdu %02x", p_llcp_pdu->opcode);
       return HOOK_BLOCK;
+  }
 }
 
 void ble_advertise(void)
@@ -1328,6 +1423,8 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
             true
         );
 
+        //dbg_txt_rom("[pdu] pdu sent.");
+
         /* Update connection packets. */
         conn = ble_hs_conn_find(g_adapter.conn_handle);
         if (conn != NULL)
@@ -1342,6 +1439,7 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
     }
     else
     {
+        //dbg_txt_rom("[pdu] cannot send pdu (state:%d, conn_state:%d)",g_adapter.state,g_adapter.conn_state );
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
         send_pb_message(&cmd_result);   
     }

@@ -5,6 +5,10 @@
 #include "nanopb/pb_decode.h"
 #include "protocol/whad.pb.h"
 
+//460800
+#define BAUDRATE_MAX 460800
+//#define BAUDRATE_MAX 115200
+
 typedef struct {
     discovery_Domain domain;
     discovery_Capability cap;

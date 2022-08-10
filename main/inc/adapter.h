@@ -46,6 +46,11 @@ typedef struct {
     adapter_conn_state_t conn_state;
     int16_t conn_handle;
 
+    /* L2CAP monitoring. */
+    bool b_l2cap_started;
+    int l2cap_pkt_size;
+    int l2cap_recv_bytes;
+
     /* Advertising data (Slave mode). */
     uint8_t adv_data[31];
     int adv_data_length;
