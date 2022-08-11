@@ -709,7 +709,7 @@ static void blecent_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
+int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
   Message pdu;
 
@@ -745,7 +745,7 @@ int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
   {
     //whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, true);
     //pending_pb_message(&pdu);
-    //dbg_txt_rom("(rx ctl) forward pdu %02x", p_pdu[0]);
+    dbg_txt_rom("(rx ctl) forward pdu %02x", p_pdu[0]);
     return HOOK_FORWARD;
   }
   else
@@ -764,7 +764,7 @@ int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
   }
 }
 
-int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
+int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
@@ -777,6 +777,7 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
     ( (g_adapter.state == CENTRAL) || (g_adapter.state == PERIPHERAL) )
   )
   {
+
     /** 
      * L2CAP layer tracking.
      * 
@@ -785,7 +786,7 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
      **/
 
     /* Valid BLE L2CAP packet is at least 6 bytes (2-byte BLE DATA header + 4-byte L2CAP header) */
-    if (length >= 6)
+    if (length >= 4)
     {
         p_l2cap_channel = &p_pdu[2];
         p_l2cap_pkt_size = &p_pdu[0];
@@ -810,7 +811,7 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
                     {
                         /* Packet is complete. */
                         g_adapter.b_l2cap_started = false;
-                        //_rom("[l2cap] received complete fragment");
+                        //dbg_txt_rom("[l2cap] received complete fragment");
                     }
                     else
                     {
@@ -875,7 +876,7 @@ int ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 
 /* This handler SHALL NOT be called, as the underlying BLE stack is not supposed
 to send data. */
-int ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
+int IRAM_ATTR ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
@@ -898,7 +899,7 @@ int ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   return HOOK_FORWARD;  
 }
 
-int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
+int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
 {
   //dbg_txt_rom("[ble:tx:ctl] sent 0x%02x opcode", p_llcp_pdu->opcode);
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
@@ -922,13 +923,13 @@ int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
       (p_llcp_pdu->opcode == 0x15)
   )
   {
-    //dbg_txt_rom("(tx ctl) forward pdu %02x", p_llcp_pdu->opcode);
-      return HOOK_FORWARD;
+    dbg_txt_rom("(tx ctl) forward pdu %02x", p_llcp_pdu->opcode);
+    return HOOK_FORWARD;
   }
   else
   {
-    //dbg_txt_rom("(tx ctl) block pdu %02x", p_llcp_pdu->opcode);
-      return HOOK_BLOCK;
+    dbg_txt_rom("(tx ctl) block pdu %02x", p_llcp_pdu->opcode);
+    return HOOK_BLOCK;
   }
 }
 

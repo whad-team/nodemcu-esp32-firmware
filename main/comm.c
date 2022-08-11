@@ -58,7 +58,6 @@ void flush_pending_pb_messages(void)
 {
     if (nb_pending_bytes > 0)
     {
-        dbg_txt("pending bytes: %d", nb_pending_bytes);
         uart_write_bytes(UART_NUM_0, pb_pending_tx_buffer, nb_pending_bytes);
         nb_pending_bytes = 0;
     }

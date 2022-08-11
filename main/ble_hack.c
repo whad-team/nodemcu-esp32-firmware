@@ -170,7 +170,7 @@ void co_list_push_back(struct co_list *list,
  * Hook for r_lld_pdu_rx_handler(), called each time a BLE packet (header + PDU) is received.
  **/
 
-int _lld_pdu_rx_handler(int param_1,int param_2)
+int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
 {
   int forward = HOOK_FORWARD;
   uint16_t *p_offset;
@@ -199,8 +199,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
     return pfn_lld_pdu_rx_handler(param_1, param_2);
   }
 
-  //if ((*((uint8_t *)param_1 + 0x72) & 0x10) == 0)
-  if (1)
+  if ((*((uint8_t *)param_1 + 0x72) & 0x10) == 0)
   {
     /* We retrieve the fifo index from memory. */
     fifo_index = ((uint8_t *)BLE_RX_CUR_FIFO_ADDR)[0x5c8];
@@ -244,10 +243,12 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
             /* Is it a control PDU ? */
             if ((pkt_header & 0x03) == 0x3)
             {
+                forward=true;
+                /*
                 if (gpfn_on_rx_control_pdu != NULL)
                 {
-                    forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xff03), p_pdu, (pkt_header>>8)&0xff);
-                }
+                    forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
+                }*/
             }
             /* Is it a data PDU ? */
             else         
@@ -256,7 +257,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
             {
                 if (gpfn_on_rx_data_pdu != NULL)
                 {
-                    forward = gpfn_on_rx_data_pdu((uint16_t)(pkt_header & 0xff03), p_pdu, (pkt_header>>8)&0xff);
+                    forward = gpfn_on_rx_data_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
                 }
             }
 
@@ -871,7 +872,7 @@ struct em_desc_node *em_buf_tx_desc_alloc(void)
  * @param length: data PDU length (without its header)
  **/
 
-void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool can_be_freed)
+void IRAM_ATTR send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool can_be_freed)
 {
   struct em_buf_node* node;
   struct em_desc_node *data_send;
@@ -996,6 +997,7 @@ void ble_hack_install_hooks(void)
   /**
    * Install LLCP hooks
    **/
+  /*
   INSTALL_HOOK(492, llc_llcp_version_ind_pdu_send)
   INSTALL_HOOK(493, llc_llcp_ch_map_update_pdu_send)
   INSTALL_HOOK(494, llc_llcp_pause_enc_req_pdu_send)
@@ -1017,6 +1019,7 @@ void ble_hack_install_hooks(void)
   INSTALL_HOOK(510, llc_llcp_length_req_pdu_send)
   INSTALL_HOOK(511, llc_llcp_length_rsp_pdu_send)
   INSTALL_HOOK(512, llc_llcp_tester_send)
+  */
 }
 
 /**
