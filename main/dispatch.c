@@ -66,6 +66,12 @@ void dispatch_message(Message *message)
                     }
                     break;
 
+                    case ble_Message_disconnect_tag:
+                    {
+                        adapter_on_disconnect(&message->msg.ble.msg.disconnect);
+                    }
+                    break;
+
                     case ble_Message_send_pdu_tag:
                     {
                         adapter_on_send_pdu(&message->msg.ble.msg.send_pdu);

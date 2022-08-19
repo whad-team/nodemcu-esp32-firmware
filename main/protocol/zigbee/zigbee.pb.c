@@ -15,7 +15,10 @@ PB_BIND(zigbee_SniffCmd, zigbee_SniffCmd, AUTO)
 PB_BIND(zigbee_JamCmd, zigbee_JamCmd, AUTO)
 
 
-PB_BIND(zigbee_SendCmd, zigbee_SendCmd, AUTO)
+PB_BIND(zigbee_SendCmd, zigbee_SendCmd, 2)
+
+
+PB_BIND(zigbee_SendRawCmd, zigbee_SendRawCmd, 2)
 
 
 PB_BIND(zigbee_EndDeviceCmd, zigbee_EndDeviceCmd, AUTO)
@@ -39,13 +42,13 @@ PB_BIND(zigbee_ManInTheMiddleCmd, zigbee_ManInTheMiddleCmd, AUTO)
 PB_BIND(zigbee_Jammed, zigbee_Jammed, AUTO)
 
 
-PB_BIND(zigbee_RawPduReceived, zigbee_RawPduReceived, AUTO)
+PB_BIND(zigbee_RawPduReceived, zigbee_RawPduReceived, 2)
 
 
-PB_BIND(zigbee_PduReceived, zigbee_PduReceived, AUTO)
+PB_BIND(zigbee_PduReceived, zigbee_PduReceived, 2)
 
 
-PB_BIND(zigbee_Message, zigbee_Message, AUTO)
+PB_BIND(zigbee_Message, zigbee_Message, 2)
 
 
 

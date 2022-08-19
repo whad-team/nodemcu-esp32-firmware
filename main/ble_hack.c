@@ -243,12 +243,10 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             /* Is it a control PDU ? */
             if ((pkt_header & 0x03) == 0x3)
             {
-                forward=true;
-                /*
                 if (gpfn_on_rx_control_pdu != NULL)
                 {
                     forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
-                }*/
+                }
             }
             /* Is it a data PDU ? */
             else         
@@ -294,10 +292,19 @@ int _lld_pdu_tx_prog(struct lld_evt_tag *evt)
   int res;
   struct co_list_hdr *item;
   //struct llcp_pdu_tag *node;
-
+  struct llcp_pdu_tag *node;
 
   /* Parse ready to send packet descriptors. */
-  item = (struct co_list_hdr *)evt->tx_llcp_pdu_rdy.first;
+  //item = (struct co_list_hdr *)evt->tx_llcp_pdu_rdy.first;
+  item = (struct co_list_hdr *)evt->tx_acl_tofree.first;
+
+  while (item != NULL)
+  {
+    node = (struct llcp_pdu_tag *)item;
+    //dbg_txt_rom("item: 0x%08x, llid=%02x length=%d", (uint32_t)item, node->opcode, node->pdu_length&0xff);
+    //dbg_txt_rom("item: 0x%08x", (uint32_t)item);
+    item = (struct co_list_hdr *)item->next;
+  }
 
   /* Call tx prog. */
   res = pfn_lld_pdu_tx_prog(evt);
@@ -981,11 +988,13 @@ void ble_hack_install_hooks(void)
   ((uint32_t *)g_ip_funcs_p)[598] = (uint32_t)_lld_pdu_data_send;
 
   /* Hook r_lld_pdu_tx_prog */
+  #if 0
   pfn_lld_pdu_tx_prog = (void *)(((uint32_t *)g_ip_funcs_p)[600]);
   #ifdef BLE_HACK_DEBUG
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_tx_prog, (uint32_t)_lld_pdu_tx_prog);
   #endif
   ((uint32_t *)g_ip_funcs_p)[600] = (uint32_t)_lld_pdu_tx_prog;
+  #endif
 
   /* Hook r_lld_pdu_data_tx_push */
   pfn_lld_pdu_data_tx_push = (void *)(((uint32_t *)g_ip_funcs_p)[597]);
@@ -997,29 +1006,27 @@ void ble_hack_install_hooks(void)
   /**
    * Install LLCP hooks
    **/
-  /*
   INSTALL_HOOK(492, llc_llcp_version_ind_pdu_send)
-  INSTALL_HOOK(493, llc_llcp_ch_map_update_pdu_send)
-  INSTALL_HOOK(494, llc_llcp_pause_enc_req_pdu_send)
-  INSTALL_HOOK(495, llc_llcp_pause_enc_rsp_pdu_send)
-  INSTALL_HOOK(496, llc_llcp_enc_req_pdu_send)
-  INSTALL_HOOK(497, llc_llcp_enc_rsp_pdu_send)
-  INSTALL_HOOK(498, llc_llcp_start_enc_rsp_pdu_send)
+  //INSTALL_HOOK(493, llc_llcp_ch_map_update_pdu_send)
+  //INSTALL_HOOK(494, llc_llcp_pause_enc_req_pdu_send)
+  //INSTALL_HOOK(495, llc_llcp_pause_enc_rsp_pdu_send)
+  //INSTALL_HOOK(496, llc_llcp_enc_req_pdu_send)
+  //INSTALL_HOOK(497, llc_llcp_enc_rsp_pdu_send)
+  //INSTALL_HOOK(498, llc_llcp_start_enc_rsp_pdu_send)
   INSTALL_HOOK(499, llc_llcp_reject_ind_pdu_send)
   INSTALL_HOOK(500, llc_llcp_con_update_pdu_send)
   INSTALL_HOOK(501, llc_llcp_con_param_req_pdu_send)
   INSTALL_HOOK(502, llc_llcp_con_param_rsp_pdu_send)
   INSTALL_HOOK(503, llc_llcp_feats_req_pdu_send)
   INSTALL_HOOK(504, llc_llcp_feats_rsp_pdu_send)
-  INSTALL_HOOK(505, llc_llcp_start_enc_req_pdu_send)
+  //INSTALL_HOOK(505, llc_llcp_start_enc_req_pdu_send)
   INSTALL_HOOK(506, llc_llcp_terminate_ind_pdu_send)
   INSTALL_HOOK(507, llc_llcp_unknown_rsp_send_pdu)
   INSTALL_HOOK(508, llc_llcp_ping_req_pdu_send)
   INSTALL_HOOK(509, llc_llcp_ping_rsp_pdu_send)
   INSTALL_HOOK(510, llc_llcp_length_req_pdu_send)
   INSTALL_HOOK(511, llc_llcp_length_rsp_pdu_send)
-  INSTALL_HOOK(512, llc_llcp_tester_send)
-  */
+  //INSTALL_HOOK(512, llc_llcp_tester_send)
 }
 
 /**

@@ -274,7 +274,7 @@ struct llcp_pdu_tag
     /// List element for chaining
     struct co_list_hdr hdr;
     /// Node index
-    uint16_t idx;
+    uint32_t idx;
     /// Pointer on the pdu to send
     void *ptr;
     uint16_t pdu_length;

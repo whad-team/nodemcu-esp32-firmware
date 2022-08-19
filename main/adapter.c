@@ -69,6 +69,7 @@ void adapter_init(void)
     g_adapter.state = OBSERVER;
     g_adapter.capabilities = g_adapter_cap;
     g_adapter.active_scan = false;
+    g_adapter.b_enabled = false;
 
     /* Initialize L2CAP filtering mechanism. */
     g_adapter.b_l2cap_started = false;
@@ -607,8 +608,11 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
 
         if (g_adapter.state == CENTRAL)
         {
-            /* Resume scanning. */
-            blecent_scan();
+            if (g_adapter.b_enabled)
+            {
+                /* Resume scanning. */
+                blecent_scan();
+            }
         }
         else if (g_adapter.state == PERIPHERAL)
         {
@@ -697,7 +701,7 @@ static void blecent_on_sync(void)
     assert(rc == 0);
 
     /* Begin scanning for a peripheral to connect to. */
-    blecent_scan();
+    //blecent_scan();
 }
 
 static void blecent_host_task(void *param)
@@ -711,45 +715,89 @@ static void blecent_host_task(void *param)
 
 int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
-  Message pdu;
+    Message pdu;
 
-  if (g_adapter.conn_state != CONNECTED)
-    return HOOK_FORWARD;
+    switch (g_adapter.state)
+    {
+        case PERIPHERAL:
+        {
+            /* Only hook control PDUs that are not required by NimBLE. */
+            if (
+                (p_pdu[0] == 0x03) || // ENC_REQ
+                (p_pdu[0] == 0x04) || // ENC_RSP
+                (p_pdu[0] == 0x05) || // START_ENC_REQ
+                (p_pdu[0] == 0x06) || // START_ENC_RSP
+                (p_pdu[0] == 0x07) || // UNKNOWN_RSP
+                (p_pdu[0] == 0x0A) || // LL_PAUSE_ENC_REQ
+                (p_pdu[0] == 0x0B) || // LL_PAUSE_ENC_RSP
+                (p_pdu[0] == 0x0C) || // LL_VERSION_IND
+                (p_pdu[0] == 0x0D) || // LL_REJECT_IND
+                (p_pdu[0] == 0x12) || // LL_PING_REQ
+                (p_pdu[0] == 0x13) || // LL_PING_RSP
+                (p_pdu[0] == 0x14) || // LENGTH_REQ
+                (p_pdu[0] == 0x15)    // LENGTH_RSP
+            )
+            {
+                /* Notify host. */
+                whad_ble_ll_data_pdu(
+                    &pdu,
+                    header,
+                    p_pdu,
+                    length,
+                    (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+                    g_adapter.conn_handle,
+                    false
+                );
+                pending_pb_message(&pdu);
 
-  /**
-   * We need to forward the following Control PDU (time-sensitive) to the NimBLE
-   * stack. These PDUs won't be forwarded to the host as it may trigger a reaction
-   * that would interfere with our NimBLE stack.
-   *
-   * - CONNECTION_UPDATE_REQ
-   * - CHANNEL_MAP_REQ
-   * - FEATURE_REQ
-   * - FEATURE_RSP
-   * - CONNECTION_PARAM_REQ
-   * - CONNECTION_PARAM_RSP
-   * - LENGTH_REQ
-   * - LENGTH_RSP
-   */
-  if (
-    (p_pdu[0] == 0x00) || // CONNECTION_UPDATE_REQ
-    (p_pdu[0] == 0x01) || // CHANNEL_MAP_REQ
-    (p_pdu[0] == 0x02) || // TERMINATE_IND
-    (p_pdu[0] == 0x08) || // FEATURE_REQ
-    (p_pdu[0] == 0x09) || // FEATURE_RSP
-    (p_pdu[0] == 0x0E) || // SLAVE_FEATURE_REQ
-    (p_pdu[0] == 0x0F) || // CONNECTION_PARAM_REQ
-    (p_pdu[0] == 0x10) || // CONNECTION_PARAM_RSP
-    (p_pdu[0] == 0x14) || // LENGTH_REQ
-    (p_pdu[0] == 0x15)    // LENGTH_RSP
-  )
-  {
-    //whad_ble_ll_data_pdu(&pdu, header, p_pdu, length, ble_BleDirection_SLAVE_TO_MASTER, g_adapter.conn_handle, true);
-    //pending_pb_message(&pdu);
-    dbg_txt_rom("(rx ctl) forward pdu %02x", p_pdu[0]);
-    return HOOK_FORWARD;
-  }
-  else
-  {
+                /* Block message. */
+                return HOOK_BLOCK;
+            }
+        }
+        break;
+
+        case CENTRAL:
+        {
+            /* Only hook control PDUs that are not required by NimBLE. */
+            if (
+                (p_pdu[0] == 0x03) || // ENC_REQ
+                (p_pdu[0] == 0x04) || // ENC_RSP
+                (p_pdu[0] == 0x05) || // START_ENC_REQ
+                (p_pdu[0] == 0x06) || // START_ENC_RSP
+                (p_pdu[0] == 0x07) || // UNKNOWN_RSP
+                (p_pdu[0] == 0x0A) || // LL_PAUSE_ENC_REQ
+                (p_pdu[0] == 0x0B) || // LL_PAUSE_ENC_RSP
+                (p_pdu[0] == 0x0C) || // LL_VERSION_IND
+                (p_pdu[0] == 0x0D) || // LL_REJECT_IND
+                (p_pdu[0] == 0x12) || // LL_PING_REQ
+                (p_pdu[0] == 0x13) || // LL_PING_RSP
+                (p_pdu[0] == 0x14) || // LENGTH_REQ
+                (p_pdu[0] == 0x15)    // LENGTH_RSP
+            )
+            {
+                /* Notify host. */
+                whad_ble_ll_data_pdu(
+                    &pdu,
+                    header,
+                    p_pdu,
+                    length,
+                    (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+                    g_adapter.conn_handle,
+                    false
+                );
+                pending_pb_message(&pdu);
+
+                /* Block message. */
+                return HOOK_BLOCK;
+            }
+        }
+        break;
+
+        default:
+        break;
+    }
+
+    /* Notify host that a control PDU is about to be forwarded to NimBLE. */
     whad_ble_ll_data_pdu(
         &pdu,
         header,
@@ -757,11 +805,12 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
         length,
         (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
         g_adapter.conn_handle,
-        false
+        true
     );
     pending_pb_message(&pdu);
-    return HOOK_BLOCK;
-  }
+
+    /* Forward by default. */
+    return HOOK_FORWARD;
 }
 
 int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
@@ -914,6 +963,7 @@ int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
       (p_llcp_pdu->opcode == 0x01) ||
       (p_llcp_pdu->opcode == 0x08) ||
       (p_llcp_pdu->opcode == 0x09) ||
+      (p_llcp_pdu->opcode == 0x0C) ||
       (p_llcp_pdu->opcode == 0x0F) ||
       (p_llcp_pdu->opcode == 0x10) ||
       (p_llcp_pdu->opcode == 0x11) ||
@@ -923,12 +973,12 @@ int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
       (p_llcp_pdu->opcode == 0x15)
   )
   {
-    dbg_txt_rom("(tx ctl) forward pdu %02x", p_llcp_pdu->opcode);
+    //dbg_txt_rom("(tx ctl) forward pdu %02x", p_llcp_pdu->opcode);
     return HOOK_FORWARD;
   }
   else
   {
-    dbg_txt_rom("(tx ctl) block pdu %02x", p_llcp_pdu->opcode);
+    //dbg_txt_rom("(tx ctl) block pdu %02x", p_llcp_pdu->opcode);
     return HOOK_BLOCK;
   }
 }
@@ -1330,6 +1380,9 @@ void adapter_on_start(ble_StartCmd *start)
                 /* Start scanning. */
                 blecent_scan();
 
+                /* Enabled. */
+                g_adapter.b_enabled = true;
+
                 /* Success. */
                 whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
                 send_pb_message(&cmd_result);                
@@ -1377,16 +1430,26 @@ void adapter_on_stop(ble_StartCmd *stop)
 
         case CENTRAL:
         {
+            /* Enabled. */
+            g_adapter.b_enabled = false;
+
             /* Stop advertising if required. */
             if (ble_gap_adv_active())
             {
                 /* Stop advertising. */
                 ble_gap_adv_stop();
+
             }
-            else if (ble_gap_conn_active())
+            else if ((g_adapter.conn_handle >= 0) && (g_adapter.conn_state == CONNECTED))
             {
-                /* Terminate connection. */
-                ble_gap_terminate(g_adapter.conn_handle, 3);
+                /* Force disconnect. */
+                send_raw_data_pdu(
+                    g_adapter.conn_handle,
+                    0x03,
+                    "\x02\x13",
+                    2,
+                    true
+                );
             }
 
             /* Success. */
@@ -1402,6 +1465,48 @@ void adapter_on_stop(ble_StartCmd *stop)
     /* Error. */
     whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
     send_pb_message(&cmd_result);
+}
+
+void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
+{
+    Message cmd_result;
+
+    switch (g_adapter.state)
+    {
+        case PERIPHERAL:
+        case CENTRAL:
+        {
+            if (g_adapter.conn_state == CONNECTED)
+            {
+                /* Force disconnect. */
+                send_raw_data_pdu(
+                    g_adapter.conn_handle,
+                    0x03,
+                    "\x02\x13",
+                    2,
+                    true
+                );
+                
+                /* Success. */
+                whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+                send_pb_message(&cmd_result);
+            }
+            else
+            {
+                whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+                send_pb_message(&cmd_result);                
+            }
+        }
+        break;
+
+        /* Cannot disconnect if not connected and in CENTRAL or PERIPHERAL mode. */
+        default:
+        {
+            whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+            send_pb_message(&cmd_result);  
+        }
+        break;
+    }
 }
 
 void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)

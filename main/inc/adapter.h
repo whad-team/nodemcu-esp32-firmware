@@ -40,6 +40,7 @@ typedef struct {
     bool active_scan;
     uint8_t my_dev_addr[6];
     bool b_spoof_addr;
+    bool b_enabled;
 
     /* Target device (Master mode). */
     uint8_t target_dev_addr[6];
@@ -87,6 +88,7 @@ void adapter_on_enable_central(ble_CentralModeCmd *central_mode);
 void adapter_on_connect(ble_ConnectToCmd *connect);
 void adapter_on_start(ble_StartCmd *start);
 void adapter_on_stop(ble_StartCmd *stop);
+void adapter_on_disconnect(ble_DisconnectCmd *disconnect);
 void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu);
 void adapter_on_sniff_adv(ble_SniffAdvCmd *sniff_adv);
 void adapter_on_notify_connected(void);
