@@ -474,6 +474,24 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         
         switch (event->disc.event_type)
         {
+            case BLE_HCI_ADV_RPT_EVTYPE_DIR_IND:
+            {
+                if (g_adapter.state == OBSERVER)
+                {
+                    /* An advertisment report was received during GAP discovery. */
+                    adapter_on_notify_adv(
+                        ble_BleAdvType_ADV_DIRECT_IND,
+                        event->disc.rssi,
+                        event->disc.addr.val,
+                        event->disc.data,
+                        event->disc.length_data,
+                        NULL,
+                        0
+                    );
+                }
+            }
+            break;
+
             case BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND:
             {
                 if (g_adapter.state == OBSERVER)
