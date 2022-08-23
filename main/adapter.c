@@ -484,9 +484,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                         event->disc.rssi,
                         event->disc.addr.val,
                         event->disc.data,
-                        event->disc.length_data,
-                        NULL,
-                        0
+                        event->disc.length_data
                     );
                 }
             }
@@ -502,9 +500,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                         event->disc.rssi,
                         event->disc.addr.val,
                         event->disc.data,
-                        event->disc.length_data,
-                        NULL,
-                        0
+                        event->disc.length_data
                     );
                 }
             }
@@ -520,9 +516,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                         event->disc.rssi,
                         event->disc.addr.val,
                         event->disc.data,
-                        event->disc.length_data,
-                        NULL,
-                        0
+                        event->disc.length_data
                     );
                 }
                 else if (g_adapter.state == CENTRAL)
@@ -546,9 +540,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                         event->disc.rssi,
                         event->disc.addr.val,
                         event->disc.data,
-                        event->disc.length_data,
-                        NULL,
-                        0
+                        event->disc.length_data
                     );
                 }
             }
@@ -563,8 +555,6 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                         ble_BleAdvType_ADV_SCAN_RSP,
                         event->disc.rssi,
                         event->disc.addr.val,
-                        NULL,
-                        0,
                         event->disc.data,
                         event->disc.length_data
                     );
@@ -1197,7 +1187,7 @@ void adapter_on_domain_info_req(discovery_DeviceDomainInfoQuery *query)
     }
 }
 
-void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t *bd_addr, uint8_t *p_adv_data, int adv_data_length, uint8_t *p_scan_rsp, int scan_rsp_length)
+void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t *bd_addr, uint8_t *p_adv_data, int adv_data_length)
 {
     Message notification;
     whad_adv_data_t adv_data;
@@ -1206,8 +1196,6 @@ void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t *bd_addr, uint8_t
     memcpy(adv_data.bd_addr, bd_addr, 6);
     adv_data.p_adv_data = p_adv_data;
     adv_data.adv_data_length = adv_data_length;
-    adv_data.p_scan_rsp = p_scan_rsp;
-    adv_data.scan_rsp_length = scan_rsp_length;
     adv_data.rssi = rssi;
     adv_data.adv_type = adv_type;
 

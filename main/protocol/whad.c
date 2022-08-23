@@ -165,8 +165,6 @@ void whad_ble_adv_pdu(
     memcpy(message->msg.ble.msg.adv_pdu.bd_address, args->bd_addr, 6);
     memcpy(message->msg.ble.msg.adv_pdu.adv_data.bytes, args->p_adv_data, args->adv_data_length);
     message->msg.ble.msg.adv_pdu.adv_data.size = args->adv_data_length;
-    memcpy(message->msg.ble.msg.adv_pdu.scanrsp_data.bytes, args->p_scan_rsp, args->scan_rsp_length);
-    message->msg.ble.msg.adv_pdu.scanrsp_data.size = args->scan_rsp_length;
     message->msg.ble.msg.adv_pdu.rssi = args->rssi;
     message->msg.ble.msg.adv_pdu.adv_type = args->adv_type;
 }

@@ -98,9 +98,7 @@ void adapter_on_notify_adv(
     int rssi,
     uint8_t *bd_addr,
     uint8_t *p_adv_data,
-    int adv_data_length,
-    uint8_t *p_scan_rsp,
-    int scan_rsp_length
+    int adv_data_length
 );
 void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr);
 void adapter_on_reset(void);
