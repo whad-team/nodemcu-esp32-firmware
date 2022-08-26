@@ -6,8 +6,8 @@
 #include "protocol/whad.pb.h"
 
 //460800
-#define BAUDRATE_MAX 460800
-//#define BAUDRATE_MAX 115200
+//#define BAUDRATE_MAX 460800
+#define BAUDRATE_MAX 115200
 
 typedef struct {
     discovery_Domain domain;
@@ -18,6 +18,7 @@ typedef struct {
     int rssi;
     ble_BleAdvType adv_type;
     uint8_t bd_addr[6];
+    uint8_t addr_type;
     uint8_t *p_adv_data;
     int adv_data_length;
     uint8_t *p_scan_rsp;
@@ -56,7 +57,14 @@ void whad_ble_data_pdu(
     ble_BleDirection direction
 );
 
-void whad_ble_notify_connected(Message *message, uint32_t conn_handle);
+void whad_ble_notify_connected(
+    Message *message,
+    uint8_t adv_addr_type,
+    uint8_t *p_adv_addr,
+    uint8_t init_addr_type,
+    uint8_t *p_init_addr,
+    uint32_t conn_handle
+);
 void whad_ble_notify_disconnected(Message *message, uint32_t conn_handle, uint32_t reason);
 
 void whad_ble_ll_data_pdu(
@@ -66,7 +74,8 @@ void whad_ble_ll_data_pdu(
     int length,
     ble_BleDirection direction,
     int conn_handle,
-    bool processed
+    bool processed,
+    bool decrypted
 );
 void whad_generic_cmd_result(
     Message *message,

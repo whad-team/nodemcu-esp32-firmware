@@ -543,7 +543,7 @@ typedef struct {
   uint8_t *data;
 } llcp_tester_send_params;
 
-typedef int (*FBLEHACK_IsrCallback)(uint16_t header, uint8_t *p_pdu, int length);
+typedef int (*FBLEHACK_IsrCallback)(uint16_t *p_header, uint8_t *p_pdu, int length);
 typedef int (*FBLEHACK_CtlCallback)(llcp_opinfo *p_llcp_pdu);
 typedef int (*F_rom_llc_llcp_send)(int conhdl, uint8_t *p_pdu, uint8_t opcode);
 

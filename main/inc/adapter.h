@@ -13,6 +13,8 @@
 #include "inc/helpers.h"
 #include "inc/ble_hack.h"
 
+#include "mbedtls/ccm.h"
+
 #define FIRMWARE_AUTHOR "Damien Cauquil"
 #define FIRMWARE_URL "https://github.com/virtualabs/esp32-fw.git"
 
@@ -39,10 +41,20 @@ typedef struct {
     adapter_state_t state;
     bool active_scan;
     uint8_t my_dev_addr[6];
+    uint8_t my_addr_type;
     bool b_spoof_addr;
     bool b_enabled;
 
+    /* Encryption material. */
+    bool b_encrypted;
+    int enc_master_counter;
+    int enc_slave_counter;
+    uint8_t enc_key[16];
+    uint8_t enc_iv[16];
+    mbedtls_ccm_context enc_context;
+
     /* Target device (Master mode). */
+    uint8_t target_dev_addr_type;
     uint8_t target_dev_addr[6];
     adapter_conn_state_t conn_state;
     int16_t conn_handle;
@@ -91,11 +103,17 @@ void adapter_on_stop(ble_StartCmd *stop);
 void adapter_on_disconnect(ble_DisconnectCmd *disconnect);
 void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu);
 void adapter_on_sniff_adv(ble_SniffAdvCmd *sniff_adv);
-void adapter_on_notify_connected(void);
+void adapter_on_notify_connected(
+    uint8_t our_addr_type,
+    uint8_t *p_our_addr,
+    uint8_t peer_addr_type,
+    uint8_t *p_peer_addr
+);
 void adapter_on_notify_disconnected(void);
 void adapter_on_notify_adv(
     uint8_t adv_type,
     int rssi,
+    uint8_t addr_type,
     uint8_t *bd_addr,
     uint8_t *p_adv_data,
     int adv_data_length
@@ -103,5 +121,6 @@ void adapter_on_notify_adv(
 void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr);
 void adapter_on_reset(void);
 void adapter_on_set_speed(discovery_SetTransportSpeed *speed);
+void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption);
 
 #endif /* ADAPTER_INC_H */

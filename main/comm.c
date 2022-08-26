@@ -88,6 +88,7 @@ void send_pb_message(const void *src_struct)
 int receive_pb_message(Message *message)
 {
     int nb_bytes_recvd, msg_size, i, j, result;
+    char dbg[2048];
 
     /* Is our buffer full ? */
     if (nb_rx_bytes >= BUF_SIZE)
@@ -141,7 +142,10 @@ int receive_pb_message(Message *message)
                         result = 1;
                     }
                     else
+                    {
+                        dbg_txt(stream.errmsg);
                         result = 0;
+                    }
 
                     /* Remove message from buffer. */
                     j=0;

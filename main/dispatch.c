@@ -82,6 +82,13 @@ void dispatch_message(Message *message)
                     {
                         adapter_on_set_bd_addr(&message->msg.ble.msg.set_bd_addr);
                     }
+                    break;
+
+                    case ble_Message_encryption_tag:
+                    {
+                        adapter_on_encryption_changed(&message->msg.ble.msg.encryption);
+                    }
+                    break;
 
                     default:
                     {

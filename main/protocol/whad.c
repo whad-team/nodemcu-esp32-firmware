@@ -163,6 +163,7 @@ void whad_ble_adv_pdu(
     message->which_msg = Message_ble_tag;
     message->msg.ble.which_msg = ble_Message_adv_pdu_tag;
     memcpy(message->msg.ble.msg.adv_pdu.bd_address, args->bd_addr, 6);
+    message->msg.ble.msg.adv_pdu.addr_type = args->addr_type;
     memcpy(message->msg.ble.msg.adv_pdu.adv_data.bytes, args->p_adv_data, args->adv_data_length);
     message->msg.ble.msg.adv_pdu.adv_data.size = args->adv_data_length;
     message->msg.ble.msg.adv_pdu.rssi = args->rssi;
@@ -190,12 +191,14 @@ void whad_ble_ll_data_pdu(
     int length,
     ble_BleDirection direction,
     int conn_handle,
-    bool processed
+    bool processed,
+    bool decrypted
 )
 {
     message->which_msg = Message_ble_tag;
     message->msg.ble.which_msg = ble_Message_pdu_tag;
     message->msg.ble.msg.pdu.processed = processed?1:0;
+    message->msg.ble.msg.pdu.decrypted = decrypted?1:0;
     message->msg.ble.msg.pdu.direction = direction;
     message->msg.ble.msg.pdu.conn_handle = conn_handle;
     message->msg.ble.msg.pdu.pdu.size = length + 2;
@@ -204,14 +207,24 @@ void whad_ble_ll_data_pdu(
     memcpy(&message->msg.ble.msg.pdu.pdu.bytes[2], p_pdu, length);
 }
 
-void whad_ble_notify_connected(Message *message, uint32_t conn_handle)
+void whad_ble_notify_connected(Message *message, uint8_t adv_addr_type, uint8_t *p_adv_addr, uint8_t init_addr_type, uint8_t *p_init_addr, uint32_t conn_handle)
 {
     message->which_msg = Message_ble_tag;
     message->msg.ble.which_msg = ble_Message_connected_tag;
+
+    /* Save Access Address (unknown, set to 0). */
     message->msg.ble.msg.connected.access_address = 0;
+
+    /* Save connection handle. */
     message->msg.ble.msg.connected.conn_handle = conn_handle;
-    memset(message->msg.ble.msg.connected.advertiser, 0, 6);
-    memset(message->msg.ble.msg.connected.initiator, 0, 6);
+
+    /* Save advertiser address and address type. */
+    memcpy(message->msg.ble.msg.connected.advertiser, p_adv_addr, 6);
+    message->msg.ble.msg.connected.adv_addr_type = adv_addr_type;
+
+    /* Save initiator address and address type. */
+    memcpy(message->msg.ble.msg.connected.initiator, p_init_addr, 6);
+    message->msg.ble.msg.connected.init_addr_type = init_addr_type;
 }
 
 

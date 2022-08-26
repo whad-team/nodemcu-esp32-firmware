@@ -4,6 +4,7 @@
 
 /* BLE */
 #include "esp_nimble_hci.h"
+#include "mbedtls/ccm.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -46,6 +47,324 @@ static uint8_t peer_addr[6];
 
 void ble_store_config_init(void);
 
+int  hungry(void)
+{
+    char toto[2000];
+
+    dbg_txt("hungry !");
+
+    return 0;
+}
+
+int encrypt_pdu(uint8_t llid, uint8_t *p_pdu, int length, uint8_t *p_output, bool b_master)
+{
+    uint8_t nonce[13];
+    uint8_t enc_pdu[256];
+    uint32_t mic;
+    uint8_t aad = llid;
+    int ret = 0, i;
+    char dbg[1024];
+    
+    /* Generate nonce */
+    if (b_master)
+    {
+        /**
+         * Copy packet counter. Counter is supposed to be on 39 bits, but we
+         * are only copying 32 bits because we're lazy. Hope a connection won't
+         * send billions of packets ...
+         */
+        memcpy(&nonce[0], &g_adapter.enc_master_counter, 4);
+        nonce[4] = 0x80; /* Master counter used */
+        memcpy(&nonce[5], g_adapter.enc_iv, 8);
+    }
+    else
+    {
+        /**
+         * Copy packet counter. Counter is supposed to be on 39 bits, but we
+         * are only copying 32 bits because we're lazy. Hope a connection won't
+         * send billions of packets ...
+         */
+        memcpy(&nonce[0], &g_adapter.enc_slave_counter, 4);
+        nonce[4] = 0x00; /* Slave counter used */
+        memcpy(&nonce[5], g_adapter.enc_iv, 8);        
+    }
+
+    /* Initialize context. */
+    mbedtls_ccm_init(&g_adapter.enc_context);
+
+    /* Set AES key */
+    mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
+    
+    /* Encrypt PDU and generate MIC. */
+    ret = mbedtls_ccm_encrypt_and_tag(
+        &g_adapter.enc_context,
+        length,
+        nonce,
+        13,
+        &aad,
+        1,
+        p_pdu,
+        p_output,
+        &p_output[length],
+        4
+    );
+ 
+    /* Free context. */
+    mbedtls_ccm_free(&g_adapter.enc_context);
+
+    if (ret == 0)
+    {
+        //dbg_txt("Encryption succeeded !");
+        
+        if (b_master)
+        {
+            g_adapter.enc_master_counter++;
+        }
+        else
+        {
+            g_adapter.enc_slave_counter++;
+        }
+
+        #if 0
+        /* Copy encrypted PDU and MIC. */
+        memcpy(p_output, enc_pdu, length);
+        memcpy(&p_output[length], &mic, 4);
+
+        /* Convert pdu to hex. */
+        for (i=0; i<length+4; i++)
+            snprintf(&dbg[2*i], 3, "%02x", p_output[i]);
+        dbg_txt("Enc. PDU: %s", dbg);
+        #endif 
+
+        /* Success. */
+        return 0;
+    }
+    else
+    {
+        dbg_txt_rom("Error while encrypting packet (%d)", ret);
+        
+        /* Error. */
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Decrypt PDU
+ * 
+ * @param header Data LL header
+ * @param p_pdu pointer to the PDU payload to decrypt
+ * @param length length of payload
+ * @param b_master true if PDU comes from a Central device, false otherwise
+ * @return int 0 on success, 1 on error
+ */
+int decrypt_pdu(uint16_t header, uint8_t *p_pdu, int length, bool b_master)
+{
+    uint8_t nonce[13];
+    uint8_t dec_pdu[256];
+    uint32_t mic;
+    uint8_t aad = (header&0xe3);
+    int ret = 0, i;
+
+    #if 0
+    char dbg[1024];
+
+    /* Display the received PDU and header. */
+    dbg_txt_rom("Master counter: %d", g_adapter.enc_master_counter);
+    dbg_txt_rom("Slave counter: %d", g_adapter.enc_slave_counter);
+    dbg_txt_rom("PDU header: 0x%04x", header);
+
+    /* Convert pdu to hex. */
+    for (i=0; i<length; i++)
+        snprintf(&dbg[2*i], 3, "%02x", p_pdu[i]);
+    dbg_txt_rom("Enc. PDU: %s", dbg);
+
+    /* Convert key to hex. */
+    for (i=0; i<16; i++)
+        snprintf(&dbg[2*i], 3, "%02x", g_adapter.enc_key[i]);
+    dbg_txt_rom("Enc. key: %s", dbg);
+
+    /* Convert iv to hex. */
+    for (i=0; i<8; i++)
+        snprintf(&dbg[2*i], 3, "%02x", g_adapter.enc_iv[i]);
+    dbg_txt_rom("Enc. IV: %s", dbg);    
+    #endif
+
+    /* Generate nonce */
+    if (b_master)
+    {
+        /**
+         * Copy packet counter. Counter is supposed to be on 39 bits, but we
+         * are only copying 32 bits because we're lazy. Hope a connection won't
+         * send billions of packets ...
+         */
+        memcpy(&nonce[0], &g_adapter.enc_master_counter, 4);
+        nonce[4] = 0x80; /* Master counter used */
+        memcpy(&nonce[5], g_adapter.enc_iv, 8);
+    }
+    else
+    {
+        /**
+         * Copy packet counter. Counter is supposed to be on 39 bits, but we
+         * are only copying 32 bits because we're lazy. Hope a connection won't
+         * send billions of packets ...
+         */
+        memcpy(&nonce[0], &g_adapter.enc_slave_counter, 4);
+        nonce[4] = 0x00; /* Slave counter used */
+        memcpy(&nonce[5], g_adapter.enc_iv, 8);        
+    }
+
+    #if 0
+    /* Convert nonce to hex. */
+    for (i=0; i<13; i++)
+        snprintf(&dbg[2*i], 3, "%02x", nonce[i]);
+    dbg_txt_rom("Nonce : %s", dbg);    
+    #endif
+
+    /* Initialize context. */
+    mbedtls_ccm_init(&g_adapter.enc_context);
+
+    /* Set AES key */
+    mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
+
+    ret= mbedtls_ccm_auth_decrypt(
+        &g_adapter.enc_context,
+        length-4,
+        nonce,
+        13,
+        &aad,
+        1,
+        p_pdu,
+        dec_pdu,
+        &p_pdu[length-4],
+        4
+    );
+
+    /* Free context. */
+    mbedtls_ccm_free(&g_adapter.enc_context);
+
+    if (ret == 0)
+    {
+        dbg_txt_rom("Decryption succeeded !");
+
+        /* Increment counter. */
+        if (b_master)
+        {
+            g_adapter.enc_master_counter++;
+        }
+        else
+        {
+            g_adapter.enc_slave_counter++;
+        }
+        
+        /* Copy decrypted pdu into original one. */
+        memcpy(p_pdu, dec_pdu, length-4);
+        
+        /* Success. */
+        return 0;
+    }
+    else
+    {
+        dbg_txt_rom("Error while decrypting packet (%d)", ret);
+        
+        /* Error. */
+        return 1;
+    }
+}
+
+bool send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
+{
+    bool b_sent = false;
+    uint8_t *p_pkt = NULL;
+    uint16_t *pkt_count;
+    struct ble_hs_conn *conn;
+    int res;
+
+    /* Handle encryption. */
+    if (b_encrypt)
+    {
+        /* Allocate a new buffer for pdu. */
+        p_pkt = (uint8_t *)malloc(length + 4);
+        if (p_pkt != NULL)
+        {
+            //dbg_txt("PDU length: %d (%d)", p_pdu[1], length);
+
+            /* Encrypt PDU. */
+            res = encrypt_pdu(
+                p_pdu[0],     /* LLID */
+                &p_pdu[2],    /* plaintext PDU payload */
+                p_pdu[1],     /* Length */
+                &p_pkt[2],    /* Output buffer (enc payload + MIC) */    
+                (g_adapter.state == CENTRAL)
+            );
+
+            if (!res)
+            {
+                //dbg_txt("encryption ok");
+
+                /* Rebuild PDU header. */
+                p_pkt[0] = p_pdu[0];
+                p_pkt[1] = p_pdu[1] + 4; /* Add MIC size */
+
+                /* Send packet. */
+                send_raw_data_pdu(
+                    g_adapter.conn_handle,
+                    p_pkt[0],
+                    &p_pkt[2],
+                    p_pkt[1],
+                    true
+                );
+
+                //dbg_txt("enc packet sent");
+
+                /* Packet has been sent. */
+                b_sent = true;             
+            }
+            else
+            {
+                dbg_txt("Error while encrypting: %d", res);
+            }
+
+            /* Free encrypted packet. */
+            free(p_pkt);
+        }
+    }
+    else
+    {
+        /* Send PDU. */
+        send_raw_data_pdu(
+            g_adapter.conn_handle,
+            p_pdu[0],
+            &p_pdu[2],
+            p_pdu[1],
+            true
+        );
+
+        /* Packet has been sent. */
+        b_sent = true;
+    }
+
+    if (b_sent)
+    {
+        /* Update connection packets. */
+        conn = ble_hs_conn_find(g_adapter.conn_handle);
+        if (conn != NULL)
+        {
+            pkt_count = (uint16_t *)(((uint8_t *)conn) + 56);
+            (*pkt_count)++;
+        }
+    }
+
+    /* Return operation status. */
+    return b_sent;
+}
+
+void send_terminate_ind(void)
+{
+    /* Send LL_TERMINATE_IND. */
+    send_pdu((uint8_t *)"\x03\x02\x02\x13", 4, g_adapter.b_encrypted);
+}
 
 void adapter_init(void)
 {
@@ -70,6 +389,14 @@ void adapter_init(void)
     g_adapter.capabilities = g_adapter_cap;
     g_adapter.active_scan = false;
     g_adapter.b_enabled = false;
+
+    /* Initialize encryption material. */
+    g_adapter.b_encrypted = false;
+    memset(g_adapter.enc_key, 0, 16);
+    memset(g_adapter.enc_iv, 0, 16);
+    g_adapter.enc_master_counter = 0;
+    g_adapter.enc_slave_counter = 0;
+    mbedtls_ccm_init(&g_adapter.enc_context);
 
     /* Initialize L2CAP filtering mechanism. */
     g_adapter.b_l2cap_started = false;
@@ -320,12 +647,11 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
 static void
 blecent_scan(void)
 {
-    uint8_t own_addr_type;
     struct ble_gap_disc_params disc_params;
     int rc;
 
     /* Figure out address to use while advertising (no privacy for now) */
-    rc = ble_hs_id_infer_auto(0, &own_addr_type);
+    rc = ble_hs_id_infer_auto(0, &g_adapter.my_addr_type);
     if (rc != 0) {
         dbg_txt("error determining address type; rc=%d\n", rc);
         return;
@@ -348,7 +674,7 @@ blecent_scan(void)
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
-    rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
+    rc = ble_gap_disc(g_adapter.my_addr_type, BLE_HS_FOREVER, &disc_params,
                       blecent_gap_event, NULL);
     if (rc != 0) {
         dbg_txt("Error initiating GAP discovery procedure; rc=%d\n",
@@ -382,7 +708,11 @@ blecent_should_connect(const struct ble_gap_disc_desc *disc)
         return rc;
     }
 
-    if (memcmp(g_adapter.target_dev_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) {
+    /* Make sure target address and address type match. */
+    if (
+        (memcmp(g_adapter.target_dev_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) ||
+        (g_adapter.target_dev_addr_type != (disc->addr.type & 0x01))
+    ) {
         return 0;
     }
 
@@ -397,7 +727,6 @@ blecent_should_connect(const struct ble_gap_disc_desc *disc)
 static void
 blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
 {
-    uint8_t own_addr_type;
     int rc;
 
     /* Don't do anything if we don't care about this advertiser. */
@@ -413,22 +742,18 @@ blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
     }
 
     /* Figure out address to use for connect (no privacy for now) */
-    rc = ble_hs_id_infer_auto(0, &own_addr_type);
+    rc = ble_hs_id_infer_auto(0, &g_adapter.my_addr_type);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
         return;
     }
-
-    /*
-     * Update BD address just before connecting.
-     */
     
 
     /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
      * timeout.
      */
 
-    rc = ble_gap_connect(own_addr_type, &disc->addr, 30000, NULL,
+    rc = ble_gap_connect(g_adapter.my_addr_type, &disc->addr, 30000, NULL,
                          blecent_gap_event, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error: Failed to connect to device; addr_type=%d "
@@ -436,6 +761,10 @@ blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
                     disc->addr.type, addr_str(disc->addr.val), rc);
         return;
     }
+
+    /*
+     * Update BD address right after having initiated a GAP connection.
+     */
 
     if (g_adapter.b_spoof_addr)
     {
@@ -482,6 +811,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                     adapter_on_notify_adv(
                         ble_BleAdvType_ADV_DIRECT_IND,
                         event->disc.rssi,
+                        event->disc.addr.type & 0x01,
                         event->disc.addr.val,
                         event->disc.data,
                         event->disc.length_data
@@ -498,6 +828,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                     adapter_on_notify_adv(
                         ble_BleAdvType_ADV_NONCONN_IND,
                         event->disc.rssi,
+                        event->disc.addr.type & 0x01,
                         event->disc.addr.val,
                         event->disc.data,
                         event->disc.length_data
@@ -514,6 +845,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                     adapter_on_notify_adv(
                         ble_BleAdvType_ADV_IND,
                         event->disc.rssi,
+                        event->disc.addr.type & 0x01,
                         event->disc.addr.val,
                         event->disc.data,
                         event->disc.length_data
@@ -538,6 +870,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                     adapter_on_notify_adv(
                         ble_BleAdvType_ADV_SCAN_IND,
                         event->disc.rssi,
+                        event->disc.addr.type & 0x01,
                         event->disc.addr.val,
                         event->disc.data,
                         event->disc.length_data
@@ -554,6 +887,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                     adapter_on_notify_adv(
                         ble_BleAdvType_ADV_SCAN_RSP,
                         event->disc.rssi,
+                        event->disc.addr.type & 0x01,
                         event->disc.addr.val,
                         event->disc.data,
                         event->disc.length_data
@@ -578,12 +912,30 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                 g_adapter.conn_handle = event->connect.conn_handle;
                 g_adapter.conn_state = CONNECTED;
 
-                adapter_on_notify_connected();
-
                 rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
                 assert(rc == 0);
-                print_conn_desc(&desc);
-                MODLOG_DFLT(INFO, "\n");
+                
+                /* In Peripheral mode, WE are advertising. */
+                if (g_adapter.state == PERIPHERAL)
+                {
+                    /* Notify peer connection. */
+                    adapter_on_notify_connected(
+                        desc.our_ota_addr.type & 0x01,
+                        desc.our_ota_addr.val,
+                        desc.peer_ota_addr.type & 0x01,
+                        desc.peer_ota_addr.val
+                    );
+                }
+                else
+                {
+                    /* Notify peer connection. */
+                    adapter_on_notify_connected(
+                        desc.peer_ota_addr.type & 0x01,
+                        desc.peer_ota_addr.val,
+                        desc.our_ota_addr.type & 0x01,
+                        desc.our_ota_addr.val
+                    );
+                }
 
                 /* Remember peer. */
                 rc = peer_add(event->connect.conn_handle);
@@ -724,11 +1076,34 @@ static void blecent_host_task(void *param)
 int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 {
     Message pdu;
+    bool b_decrypted = false;
 
     switch (g_adapter.state)
     {
         case PERIPHERAL:
         {
+            /* If encryption is enabled, decrypt incoming PDU. */
+            if (g_adapter.b_encrypted)
+            {
+                dbg_txt_rom("Encrypted CTL PDU received");
+
+                /* Decrypt PDU in place. PDU comes from master. */
+                if (decrypt_pdu(header, p_pdu, length, true) != 0)
+                {
+                    /* Error while decrypting, drop PDU. */
+                    dbg_txt_rom("Error during PDU decryption, dropping PDU.");
+                    return HOOK_BLOCK;
+                }
+                else
+                {
+                    /* Packet has been decrypted. */
+                    b_decrypted = true;
+
+                    /* Remove MIC. */
+                    length -= 4;
+                }
+            }
+
             /* Only hook control PDUs that are not required by NimBLE. */
             if (
                 (p_pdu[0] == 0x03) || // ENC_REQ
@@ -754,7 +1129,8 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
                     length,
                     (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
                     g_adapter.conn_handle,
-                    false
+                    false,
+                    b_decrypted
                 );
                 pending_pb_message(&pdu);
 
@@ -766,6 +1142,29 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 
         case CENTRAL:
         {
+
+            /* If encryption is enabled, decrypt incoming PDU. */
+            if (g_adapter.b_encrypted)
+            {
+                dbg_txt_rom("Encrypted CTL PDU received");
+
+                /* Decrypt PDU in place. PDU comes from slave, not master. */
+                if (decrypt_pdu(header, p_pdu, length, false) != 0)
+                {
+                    /* Error while decrypting, drop PDU. */
+                    dbg_txt_rom("Error during PDU decryption, dropping PDU.");
+                    return HOOK_BLOCK;
+                }
+                else
+                {
+                    /* Packet successfully decrypted. */
+                    b_decrypted = true;
+
+                    /* Remove MIC. */
+                    length -= 4;
+                }
+            }
+
             /* Only hook control PDUs that are not required by NimBLE. */
             if (
                 (p_pdu[0] == 0x03) || // ENC_REQ
@@ -791,7 +1190,8 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
                     length,
                     (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
                     g_adapter.conn_handle,
-                    false
+                    false,
+                    b_decrypted
                 );
                 pending_pb_message(&pdu);
 
@@ -813,7 +1213,8 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
         length,
         (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
         g_adapter.conn_handle,
-        true
+        true,
+        b_decrypted
     );
     pending_pb_message(&pdu);
 
@@ -828,6 +1229,7 @@ int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   Message pdu;
   uint16_t *p_l2cap_channel, *p_l2cap_pkt_size;
   bool b_valid_pkt = false;
+  bool b_decrypted = false;
 
   if (
     (g_adapter.conn_state == CONNECTED) && 
@@ -835,96 +1237,120 @@ int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
   )
   {
 
-    /** 
-     * L2CAP layer tracking.
-     * 
-     * This feature has been implemented to avoid some noise packets
-     * reported by r_lld_rx_pdu_handler().
-     **/
-
-    /* Valid BLE L2CAP packet is at least 6 bytes (2-byte BLE DATA header + 4-byte L2CAP header) */
-    if (length >= 4)
+    /* If encryption is enabled, decrypt incoming PDU. */
+    if (g_adapter.b_encrypted)
     {
-        p_l2cap_channel = &p_pdu[2];
-        p_l2cap_pkt_size = &p_pdu[0];
+        dbg_txt_rom("Encrypted Data PDU received");
 
-        //dbg_txt_rom("[l2cap] pdu size %d, l2cap size: %d, channel: %d", length, *p_l2cap_pkt_size,*p_l2cap_channel);
-
-        /* Do we have a DATA start fragment ? */
-        if ((header & 0x03) == 0x02)
+        /* Decrypt PDU in place. PDU comes from master. */
+        if (decrypt_pdu(header, p_pdu, length, 0) != 0)
         {
-            //dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
-            if (!g_adapter.b_l2cap_started)
-            {
-                /* Make sure L2CAP header has the correct channel (attribute). */
-                if (*p_l2cap_channel == 0x04)
-                {
-                    /* L2CAP start fragment received, save expected size. */
-                    g_adapter.b_l2cap_started = true;
-                    g_adapter.l2cap_pkt_size = *p_l2cap_pkt_size;
-                    g_adapter.l2cap_recv_bytes = length - 4; /* information payload size */
+            /* Error while decrypting, drop PDU. */
+            dbg_txt_rom("Error during PDU decryption, dropping PDU.");
+        }
+        else
+        {
+            /* Packet successfully decrypted. */
+            b_decrypted = true;
 
-                    if (g_adapter.l2cap_recv_bytes == g_adapter.l2cap_pkt_size)
+            /* Remove MIC. */
+            length -= 4;
+        }        
+    }
+    else
+    {
+
+        /** 
+         * L2CAP layer tracking.
+         * 
+         * This feature has been implemented to avoid some noise packets
+         * reported by r_lld_rx_pdu_handler().
+         **/
+
+        /* Valid BLE L2CAP packet is at least 6 bytes (2-byte BLE DATA header + 4-byte L2CAP header) */
+        if (length >= 4)
+        {
+            p_l2cap_channel = &p_pdu[2];
+            p_l2cap_pkt_size = &p_pdu[0];
+
+            //dbg_txt_rom("[l2cap] pdu size %d, l2cap size: %d, channel: %d", length, *p_l2cap_pkt_size,*p_l2cap_channel);
+
+            /* Do we have a DATA start fragment ? */
+            if ((header & 0x03) == 0x02)
+            {
+                //dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
+                if (!g_adapter.b_l2cap_started)
+                {
+                    /* Make sure L2CAP header has the correct channel (attribute). */
+                    if (*p_l2cap_channel == 0x04)
                     {
-                        /* Packet is complete. */
+                        /* L2CAP start fragment received, save expected size. */
+                        g_adapter.b_l2cap_started = true;
+                        g_adapter.l2cap_pkt_size = *p_l2cap_pkt_size;
+                        g_adapter.l2cap_recv_bytes = length - 4; /* information payload size */
+
+                        if (g_adapter.l2cap_recv_bytes == g_adapter.l2cap_pkt_size)
+                        {
+                            /* Packet is complete. */
+                            g_adapter.b_l2cap_started = false;
+                            //dbg_txt_rom("[l2cap] received complete fragment");
+                        }
+                        else
+                        {
+                            //dbg_txt_rom("[l2cap] received start fragment");
+                        }
+                    }
+
+                    /* Packet is valid. */
+                    b_valid_pkt = true;
+                }
+            }
+            /* Do we have a DATA continue fragment ? */
+            else if ((header & 0x03) == 0x01)
+            {
+                //dbg_txt_rom("[l2cap] continue fragment received (state=%d)", g_adapter.b_l2cap_started);
+                /* Only accept this fragment after a start fragment has been received. */
+                if (g_adapter.b_l2cap_started)
+                {
+                    //dbg_txt_rom("[l2cap] received continue fragment");
+
+                    /* Do we have received a complete L2CAP packet ? */
+                    g_adapter.l2cap_recv_bytes += (length - 4); /* information payload size. */
+                    if (g_adapter.l2cap_recv_bytes >= g_adapter.l2cap_pkt_size)
+                    {
+                        //dbg_txt_rom("[l2cap] packet is complete");
+
+                        /* Yes, next packet shall be a start fragment. */
                         g_adapter.b_l2cap_started = false;
-                        //dbg_txt_rom("[l2cap] received complete fragment");
+                        g_adapter.l2cap_pkt_size = 0;
+                        g_adapter.l2cap_recv_bytes = 0;
                     }
                     else
                     {
-                        //dbg_txt_rom("[l2cap] received start fragment");
+                        //dbg_txt_rom("[l2cap] packet continuation %d/%d", g_adapter.l2cap_recv_bytes, g_adapter.l2cap_pkt_size);
                     }
-                }
 
-                /* Packet is valid. */
-                b_valid_pkt = true;
+                    /* Packet is valid. */
+                    b_valid_pkt = true;
+                }
             }
-        }
-        /* Do we have a DATA continue fragment ? */
-        else if ((header & 0x03) == 0x01)
-        {
-            //dbg_txt_rom("[l2cap] continue fragment received (state=%d)", g_adapter.b_l2cap_started);
-            /* Only accept this fragment after a start fragment has been received. */
-            if (g_adapter.b_l2cap_started)
+
+            if (b_valid_pkt)
             {
-                //dbg_txt_rom("[l2cap] received continue fragment");
-
-                /* Do we have received a complete L2CAP packet ? */
-                g_adapter.l2cap_recv_bytes += (length - 4); /* information payload size. */
-                if (g_adapter.l2cap_recv_bytes >= g_adapter.l2cap_pkt_size)
-                {
-                    //dbg_txt_rom("[l2cap] packet is complete");
-
-                    /* Yes, next packet shall be a start fragment. */
-                    g_adapter.b_l2cap_started = false;
-                    g_adapter.l2cap_pkt_size = 0;
-                    g_adapter.l2cap_recv_bytes = 0;
-                }
-                else
-                {
-                    //dbg_txt_rom("[l2cap] packet continuation %d/%d", g_adapter.l2cap_recv_bytes, g_adapter.l2cap_pkt_size);
-                }
-
-                /* Packet is valid. */
-                b_valid_pkt = true;
+                whad_ble_ll_data_pdu(
+                    &pdu,
+                    header,
+                    p_pdu,
+                    length,
+                    (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+                    g_adapter.conn_handle,
+                    false,
+                    b_decrypted
+                );
+                pending_pb_message(&pdu);
             }
-        }
-
-        if (b_valid_pkt)
-        {
-            whad_ble_ll_data_pdu(
-                &pdu,
-                header,
-                p_pdu,
-                length,
-                (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-                g_adapter.conn_handle,
-                false
-            );
-            pending_pb_message(&pdu);
         }
     }
-
     return HOOK_BLOCK;
   }
   else
@@ -948,7 +1374,8 @@ int IRAM_ATTR ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
         length,
         (g_adapter.state == CENTRAL)?ble_BleDirection_MASTER_TO_SLAVE:ble_BleDirection_SLAVE_TO_MASTER,
         g_adapter.conn_handle,
-        true
+        true,
+        false
     );
     pending_pb_message(&pdu); 
   }
@@ -995,6 +1422,13 @@ void ble_advertise(void)
 {
     int rc;
     struct ble_gap_adv_params adv_params;
+
+    /* Figure out address to use for connect (no privacy for now) */
+    rc = ble_hs_id_infer_auto(0, &g_adapter.my_addr_type);
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
+        return;
+    }
 
     /* Update advertising and scan response data. */
     if (g_adapter.adv_data_length > 0)
@@ -1054,6 +1488,7 @@ void adapter_quit_state(adapter_state_t state)
                     //dbg_txt("terminate connection: %d (%d)", res, g_adapter.conn_handle);
                     
                     /* Force disconnect. */
+                    /*
                     send_raw_data_pdu(
                         g_adapter.conn_handle,
                         0x03,
@@ -1061,6 +1496,8 @@ void adapter_quit_state(adapter_state_t state)
                         2,
                         true
                     );
+                    */
+                   send_terminate_ind();
                 }
 
                 /* Wait for the BLE stack to be disconnected. */
@@ -1187,13 +1624,14 @@ void adapter_on_domain_info_req(discovery_DeviceDomainInfoQuery *query)
     }
 }
 
-void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t *bd_addr, uint8_t *p_adv_data, int adv_data_length)
+void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t addr_type, uint8_t *bd_addr, uint8_t *p_adv_data, int adv_data_length)
 {
     Message notification;
     whad_adv_data_t adv_data;
 
     memset(&notification, 0, sizeof(Message));
     memcpy(adv_data.bd_addr, bd_addr, 6);
+    adv_data.addr_type = addr_type;
     adv_data.p_adv_data = p_adv_data;
     adv_data.adv_data_length = adv_data_length;
     adv_data.rssi = rssi;
@@ -1204,11 +1642,18 @@ void adapter_on_notify_adv(uint8_t adv_type, int rssi, uint8_t *bd_addr, uint8_t
     send_pb_message(&notification);
 }
 
-void adapter_on_notify_connected(void)
+void adapter_on_notify_connected(uint8_t our_addr_type, uint8_t *p_our_addr, uint8_t peer_addr_type, uint8_t *p_peer_addr)
 {
     Message notification;
 
-    whad_ble_notify_connected(&notification, g_adapter.conn_handle);
+    whad_ble_notify_connected(
+        &notification,
+        our_addr_type,
+        p_our_addr,
+        peer_addr_type,
+        p_peer_addr,
+        g_adapter.conn_handle
+    );
     send_pb_message(&notification);
 }
 
@@ -1347,6 +1792,9 @@ void adapter_on_connect(ble_ConnectToCmd *connect)
         /* Copy target address. */
         memcpy(g_adapter.target_dev_addr, connect->bd_address, 6);
 
+        /* Copy target address type. */
+        g_adapter.target_dev_addr_type = connect->addr_type;
+
         /* Success ! */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
         send_pb_message(&cmd_result);
@@ -1449,13 +1897,15 @@ void adapter_on_stop(ble_StartCmd *stop)
             else if ((g_adapter.conn_handle >= 0) && (g_adapter.conn_state == CONNECTED))
             {
                 /* Force disconnect. */
+                /*
                 send_raw_data_pdu(
                     g_adapter.conn_handle,
                     0x03,
                     "\x02\x13",
                     2,
                     true
-                );
+                );*/
+                send_terminate_ind();
             }
 
             /* Success. */
@@ -1485,13 +1935,15 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
             if (g_adapter.conn_state == CONNECTED)
             {
                 /* Force disconnect. */
+                /*
                 send_raw_data_pdu(
                     g_adapter.conn_handle,
                     0x03,
                     "\x02\x13",
                     2,
                     true
-                );
+                );*/
+                send_terminate_ind();
                 
                 /* Success. */
                 whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
@@ -1515,39 +1967,36 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
     }
 }
 
-void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu)
+void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
 {
     Message cmd_result;
     struct ble_hs_conn *conn;
     uint16_t *pkt_count;
+    uint8_t *p_pkt = NULL;
+    int res;
+    int length;
 
     if (
         ((g_adapter.state == CENTRAL) || (g_adapter.state == PERIPHERAL)) &&
         (g_adapter.conn_state == CONNECTED)
     )
     {
-        /* Send PDU. */
-        send_raw_data_pdu(
-            g_adapter.conn_handle,
-            send_pdu->pdu.bytes[0],
-            &send_pdu->pdu.bytes[2],
-            send_pdu->pdu.bytes[1],
-            true
-        );
 
-        //dbg_txt_rom("[pdu] pdu sent.");
-
-        /* Update connection packets. */
-        conn = ble_hs_conn_find(g_adapter.conn_handle);
-        if (conn != NULL)
-        {
-            pkt_count = (uint16_t *)(((uint8_t *)conn) + 56);
-            (*pkt_count)++;
+        if (send_pdu(
+            send_pdu_cmd->pdu.bytes,
+            send_pdu_cmd->pdu.size,
+            send_pdu_cmd->encrypt
+        )) {
+            /* Success ! */
+            whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+            send_pb_message(&cmd_result);
         }
-
-        /* Success ! */
-        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
-        send_pb_message(&cmd_result);
+        else
+        {
+            /* Error. */
+            whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+            send_pb_message(&cmd_result);   
+        }
     }
     else
     {
@@ -1562,7 +2011,13 @@ void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr)
 {
     Message cmd_result;
 
-    //r_lld_util_set_bd_address((uint8_t *)bd_addr->bd_address, 0);
+    /* Ask for a random address from NimBLE, if we need a random one. */
+    if (bd_addr->addr_type == ble_BleAddrType_RANDOM)
+    {
+        ble_hs_id_set_rnd(bd_addr->bd_address);
+    }
+
+    /* Save our spoofed address. */
     memcpy(g_adapter.my_dev_addr, bd_addr->bd_address, 6);
     g_adapter.b_spoof_addr = true;
 
@@ -1599,5 +2054,60 @@ void adapter_on_set_speed(discovery_SetTransportSpeed *speed)
         /* Send error message. */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
         send_pb_message(&cmd_result);   
+    }
+}
+
+void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
+{
+    Message cmd_result;
+    int res=0,ret;
+    
+    /* Initialize crypto. */
+    if (encryption->enabled)
+    {
+        /* Copy  128-bit Key and IV. */
+        memcpy(g_adapter.enc_key, encryption->key, 16);
+        memcpy(g_adapter.enc_iv, encryption->iv, 16);
+
+        /* Reset master and slave counters. */
+        g_adapter.enc_master_counter = 0;
+        g_adapter.enc_slave_counter = 0;
+
+        /* Initialize AES CCM context. */
+        mbedtls_ccm_init(&g_adapter.enc_context);
+
+        /* Set AES key */
+        ret = mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
+        if(ret != 0)
+        {
+            res = 1;
+            g_adapter.b_encrypted = false;
+        }
+
+        /* Set encryption status accordingly. */
+        g_adapter.b_encrypted = encryption->enabled;
+    }
+    else
+    {
+        /* Disable encryption. */
+        g_adapter.b_encrypted = false;
+    }
+
+    /* Return message based on initialization result. */
+    if (!res)
+    {
+        dbg_txt("Link-layer crypto OK: %d", g_adapter.b_encrypted);
+
+        /* Send success message. */
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+        send_pb_message(&cmd_result);
+    }
+    else
+    {
+        dbg_txt("Error: cannot enable encryption");
+
+        /* Send error message. */
+        whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+        send_pb_message(&cmd_result);           
     }
 }
