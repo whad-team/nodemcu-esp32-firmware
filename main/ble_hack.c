@@ -163,6 +163,20 @@ void co_list_push_back(struct co_list *list,
     }
 }
 
+void set_packet_length(int packet_num, uint8_t length)
+{
+    pkt_hdr_t *p_header = (pkt_hdr_t *)(BLE_RX_PKT_HDR_ADDR);
+    uint32_t pkt_header;
+    
+    /* Read packet header from fifo header (located at 0x3ffb094c). */
+    pkt_header = p_header[packet_num].header;
+
+    /* Update length. */
+    pkt_header = (pkt_header & 0xffff00ff) | ((length)<<8);
+
+    /* Overwrite header. */
+    p_header[packet_num].header = pkt_header;
+}
 
 /**
  * _lld_pdu_rx_handler()
@@ -245,7 +259,7 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             {
                 if (gpfn_on_rx_control_pdu != NULL)
                 {
-                    forward = gpfn_on_rx_control_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
+                    forward = gpfn_on_rx_control_pdu(j, (uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
                 }
             }
             /* Is it a data PDU ? */
@@ -255,7 +269,7 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             {
                 if (gpfn_on_rx_data_pdu != NULL)
                 {
-                    forward = gpfn_on_rx_data_pdu((uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
+                    forward = gpfn_on_rx_data_pdu(j, (uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
                 }
             }
 
@@ -348,7 +362,7 @@ int _lld_pdu_data_tx_push(struct lld_evt_tag *evt, struct em_desc_node *txnode, 
   if (gpfn_on_tx_data_pdu != NULL)
   {
     /* Should we block this data PDU ? */
-    if (gpfn_on_tx_data_pdu(txnode->llid | (txnode->length << 8), p_buf, txnode->length) == HOOK_BLOCK)
+    if (gpfn_on_tx_data_pdu(-1, txnode->llid | (txnode->length << 8), p_buf, txnode->length) == HOOK_BLOCK)
     {
       /* Set TX buffer length to zero (won't be transmitted, but will be freed later. */
       txnode->length = 0;

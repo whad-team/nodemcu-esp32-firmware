@@ -83,9 +83,9 @@ static void blecent_on_sync(void);
 void ble_advertise(void);
 
 /* BLE hooks. */
-int ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length);
-int ble_rx_data_handler(uint16_t header,uint8_t *p_pdu, int length);
-int ble_tx_data_handler(uint16_t header,uint8_t *p_pdu, int length);
+int ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int length);
+int ble_rx_data_handler(int packet_num, uint16_t header,uint8_t *p_pdu, int length);
+int ble_tx_data_handler(int packet_num, uint16_t header,uint8_t *p_pdu, int length);
 int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu);
 
 /* Callbacks. */

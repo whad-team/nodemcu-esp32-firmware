@@ -1073,7 +1073,7 @@ static void blecent_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
+int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int length)
 {
     Message pdu;
     bool b_decrypted = false;
@@ -1101,6 +1101,9 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 
                     /* Remove MIC. */
                     length -= 4;
+
+                    /* Update packet header. */
+                    set_packet_length(packet_num, length);
                 }
             }
 
@@ -1162,6 +1165,9 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
 
                     /* Remove MIC. */
                     length -= 4;
+
+                    /* Update packet header. */
+                    set_packet_length(packet_num, length);
                 }
             }
 
@@ -1222,7 +1228,7 @@ int IRAM_ATTR ble_rx_ctl_handler(uint16_t header, uint8_t *p_pdu, int length)
     return HOOK_FORWARD;
 }
 
-int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
+int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int length)
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
@@ -1255,6 +1261,9 @@ int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 
             /* Remove MIC. */
             length -= 4;
+
+            /* Update packet header. */
+            set_packet_length(packet_num, length);
         }        
     }
     else
@@ -1359,7 +1368,7 @@ int IRAM_ATTR ble_rx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
 
 /* This handler SHALL NOT be called, as the underlying BLE stack is not supposed
 to send data. */
-int IRAM_ATTR ble_tx_data_handler(uint16_t header, uint8_t *p_pdu, int length)
+int IRAM_ATTR ble_tx_data_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int length)
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
