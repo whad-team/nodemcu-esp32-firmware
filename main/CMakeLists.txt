@@ -7,6 +7,7 @@ idf_component_register(
     "main.c"
     "misc.c"
     "peer.c"
+    "rxqueue.c"
     "ble_hack.c"
     "nanopb/pb_common.c"
     "nanopb/pb_decode.c"

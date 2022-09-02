@@ -12,6 +12,7 @@
 #include "inc/comm.h"
 #include "inc/helpers.h"
 #include "inc/ble_hack.h"
+#include "inc/rxqueue.h"
 
 #include "mbedtls/ccm.h"
 

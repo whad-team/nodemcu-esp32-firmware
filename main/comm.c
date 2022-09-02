@@ -23,6 +23,8 @@ esp_err_t reconfigure_uart(int speed, bool reinstall_driver)
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
     };
 
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_0, 1, 3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+
     // Configure UART parameters
     uart_driver_delete(UART_NUM_0);
     uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
@@ -98,7 +100,7 @@ int receive_pb_message(Message *message)
     }
 
     /* Check if we have something to read. */
-    nb_rx_bytes += /*nb_bytes_recvd =*/ uart_read_bytes(UART_NUM_0, &pb_rx_buffer[nb_rx_bytes], BUF_SIZE - nb_rx_bytes, 10 / portTICK_PERIOD_MS);
+    nb_rx_bytes += /*nb_bytes_recvd =*/ uart_read_bytes(UART_NUM_0, &pb_rx_buffer[nb_rx_bytes], BUF_SIZE - nb_rx_bytes, 1 / portTICK_PERIOD_MS);
 
     if (nb_rx_bytes >= 2)
     {

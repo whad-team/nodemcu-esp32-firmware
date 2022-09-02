@@ -563,7 +563,7 @@ void set_packet_length(int packet_num, uint8_t length);
 
 /* Send a data PDU. */
 void send_data_pdu(int conhdl, void *p_pdu, int length);
-void send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool can_be_freed);
+void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, bool can_be_freed);
 
 /* Send a control PDU. */
 void send_control_pdu(int conhdl, uint8_t *p_pdu, int length);
@@ -571,5 +571,7 @@ int rom_llc_llcp_send(int conhdl, uint8_t *p_pdu, uint8_t opcode);
 
 void _llc_llcp_version_ind_pdu_send(uint16_t conhdl);
 void _llc_llcp_terminate_ind_pdu_send(uint16_t conhdl, uint8_t err_code);
+
+void debug_fifos(void);
 
 #endif /* __INC_ESP32_BLE_HACK_H */

@@ -31,8 +31,55 @@
 #include "inc/comm.h"
 #include "inc/dispatch.h"
 #include "inc/helpers.h"
+#include "inc/rxqueue.h"
 
 #define BUF_SIZE (1024)
+
+void notify_pending_pdus(void)
+{
+    Message ble_ll_pdu;
+    uint8_t direction, flags, llid, length;
+    uint16_t conn_handle;
+    uint8_t pdu[256];
+    int ret;
+
+    /* Check queue size. */
+    while (rxqueue_get_size() > 0)
+    {
+        /* We still have some data to send. */
+        length = 255;
+        ret = rxqueue_poke_pdu(
+            &direction,
+            &flags, 
+            &conn_handle,
+            &llid,
+            &length,
+            &pdu
+        );
+
+        /* PDU successfully extracted from queue. */
+        if (ret == RX_QUEUE_SUCCESS)
+        {
+            /* Send a whad message. */
+            whad_ble_ll_data_pdu(
+                &ble_ll_pdu,
+                llid | (length << 8),
+                &pdu,
+                length,
+                direction,
+                conn_handle,
+                (flags&RX_QUEUE_FLAG_PROCESSED)==RX_QUEUE_FLAG_PROCESSED,
+                (flags&RX_QUEUE_FLAG_DECRYPTED)==RX_QUEUE_FLAG_DECRYPTED
+            );
+            send_pb_message(&ble_ll_pdu);
+        }
+        else
+        {
+            printf("[main::process pdus] cannot extract message from queue: %d", ret);
+            break;
+        }
+    }
+}
 
 void
 app_main(void)
@@ -60,6 +107,9 @@ app_main(void)
     /* Handle UART messages. */
     while (1)
     {
+        /* Do we have some data to send ? */
+        notify_pending_pdus();
+
         /* Process input messages. */
         if (receive_pb_message(&message_in) > 0)
             dispatch_message(&message_in);

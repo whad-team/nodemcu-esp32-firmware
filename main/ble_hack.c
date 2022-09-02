@@ -14,6 +14,8 @@ extern int g_bt_plf_log_level;
 /* RX buffer free function. */
 extern uint16_t r_em_buf_rx_free(uint32_t desc);
 
+extern void bb_wdt_int_enable(bool enable);
+
 /* Rx handler hooking (ISR). */
 uint8_t *p_rx_buffer = (uint8_t *)(BLE_RX_BUFFER_ADDR);
 typedef int (*F_lld_pdu_rx_handler)(int param_1,int param_2);
@@ -893,19 +895,22 @@ struct em_desc_node *em_buf_tx_desc_alloc(void)
  * @param length: data PDU length (without its header)
  **/
 
-void IRAM_ATTR send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int length, bool can_be_freed)
+void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, bool can_be_freed)
 {
   struct em_buf_node* node;
   struct em_desc_node *data_send;
   struct lld_evt_tag *env = (struct lld_evt_tag *)(*(uint32_t*)((uint32_t)llc_env[conhdl]+0x10) + 0x28);
 
-  portDISABLE_INTERRUPTS();
+  /* Disable baseband watchdog. */
+  bb_wdt_int_enable(0);
 
   /* Allocate data_send. */
   data_send = (struct em_desc_node *)em_buf_tx_desc_alloc();
 
   /* Allocate a buffer. */
   node = em_buf_tx_alloc();
+
+  portDISABLE_INTERRUPTS();
 
   /* Write data into allocated buf node. */
   memcpy((uint8_t *)((uint8_t *)p_rx_buffer + node->buf_ptr), p_pdu, length);
@@ -918,11 +923,10 @@ void IRAM_ATTR send_raw_data_pdu(int conhdl, uint8_t llid, void *p_pdu, int leng
 
   /* Call lld_pdu_data_tx_push */  
   pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
-
   //env->tx_prog.maxcnt--;
-
   portENABLE_INTERRUPTS();
 
+  bb_wdt_int_enable(1);
 }
 
 
@@ -1089,4 +1093,42 @@ void ble_hack_tx_data_pdu_handler(FBLEHACK_IsrCallback pfn_data_callback)
 int rom_llc_llcp_send(int conhdl, uint8_t *p_pdu, uint8_t opcode)
 {
   return pfn_rom_llc_llcp_send(conhdl, p_pdu, opcode);
+}
+
+void debug_fifos(void)
+{
+    uint16_t *p_offset;
+    uint32_t pkt_header;
+    uint8_t *p_pdu;
+    int channel;
+    int pkt_size;
+    int rssi;
+    int nb_links;
+    pkt_hdr_t *p_header = (pkt_hdr_t *)(BLE_RX_PKT_HDR_ADDR);
+    uint16_t pkt_status = *(uint16_t *)(BLE_RX_PKT_STATUS);
+    int j,k;
+    char dbg[256];
+
+    for (j=0; j<8; j++)
+    {
+        /* Read packet header from fifo header (located at 0x3ffb094c). */
+        pkt_header = p_header[j].header;
+        
+        /* Extract channel, rssi and packet size. */
+        channel = (pkt_header>>24);
+        rssi = (pkt_header>>16) & 0xff;
+        pkt_size = (pkt_header >> 8) & 0xff;
+
+        if (pkt_size >= 0)
+        {
+            /* TODO: make sure we get the correct offset */
+            p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*/*fifo_index*/j);
+            p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
+
+            /* Show PDU */
+            for (k=0; k<pkt_size; k++)
+                snprintf(&dbg[k*2],3,"%02x", p_pdu[k]);
+            esp_rom_printf("FIFO[%d]: %02x%02x%s\n", j, pkt_header&0xff, (pkt_header&0xff00)>>8, dbg);
+        }
+    }
 }
