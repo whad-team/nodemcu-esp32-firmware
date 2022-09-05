@@ -4,7 +4,6 @@
 
 /* BLE */
 #include "esp_nimble_hci.h"
-#include "mbedtls/ccm.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -24,7 +23,7 @@ extern struct ble_hs_conn *ble_hs_conn_find(uint16_t handle);
 extern int r_lld_util_set_bd_address(uint8_t *p_bd_addr, uint32_t addr_type);
 extern uint8_t g_dev_address[6];
 
-static adapter_t g_adapter;
+adapter_t g_adapter;
 static DeviceCapability g_adapter_cap[] = {
     {discovery_Domain_BtLE, discovery_Capability_SlaveRole | discovery_Capability_MasterRole | discovery_Capability_Inject | discovery_Capability_NoRawData},
     {0, 0}
@@ -56,6 +55,7 @@ int  hungry(void)
     return 0;
 }
 
+#if 0
 int encrypt_pdu(uint8_t llid, uint8_t *p_pdu, int length, uint8_t *p_output, bool b_master)
 {
     uint8_t nonce[13];
@@ -302,6 +302,7 @@ int decrypt_pdu(uint16_t header, uint8_t *p_pdu, int length, bool b_master)
         return 1;
     }
 }
+#endif
 
 bool send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
 {
@@ -430,7 +431,6 @@ void adapter_init(void)
     memset(g_adapter.enc_iv, 0, 16);
     g_adapter.enc_master_counter = 0;
     g_adapter.enc_slave_counter = 0;
-    mbedtls_ccm_init(&g_adapter.enc_context);
 
     /* Initialize L2CAP filtering mechanism. */
     g_adapter.b_l2cap_started = false;
@@ -464,6 +464,13 @@ void adapter_init(void)
     ble_hs_cfg.sync_cb = blecent_on_sync;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
+    ble_hs_cfg.sm_io_cap =  BLE_SM_IO_CAP_NO_IO;
+    ble_hs_cfg.sm_bonding = 1;
+    ble_hs_cfg.sm_mitm = 0;
+    ble_hs_cfg.sm_sc = 0;
+    ble_hs_cfg.sm_our_key_dist = 1;
+    ble_hs_cfg.sm_their_key_dist = 1;
+
     /* Initialize data structures to track connected peers. */
     rc = peer_init(MYNEWT_VAL(BLE_MAX_CONNECTIONS), 64, 64, 64);
     assert(rc == 0);
@@ -477,6 +484,9 @@ void adapter_init(void)
 
     //dbg_txt("Start BLE host task");
     nimble_port_freertos_init(blecent_host_task);
+
+    /* Disable RWBLE crypto. */
+    ble_disable_crypto();
 
     /* Adapter is ready now ! */
     whad_discovery_ready_resp(&msg);
@@ -1119,6 +1129,15 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
     uint8_t *p_payload = NULL;
     int ret;
 
+    /* Read RWBLECTNL () register. */
+    esp_rom_printf("RWBLECNTL: 0x%08x\n", ble_read_rwblecntl());
+    esp_rom_printf("RWBLECONF: 0x%08x\n", RWBLECONF);
+    esp_rom_printf("BLE_INTCNTL: 0x%08x\n", BLE_INTCNTL);
+    esp_rom_printf("BLE_INTSTAT: 0x%08x\n", BLE_INTSTAT);
+    esp_rom_printf("BLE_INTRAWSTAT: 0x%08x\n", BLE_INTRAWSTAT);
+    esp_rom_printf("BLE_ERRORTYPESTAT: 0x%08x\n", BLE_ERRORTYPESTAT);
+
+
     switch (g_adapter.state)
     {
         case PERIPHERAL:
@@ -1126,7 +1145,25 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
             /* If encryption is enabled, decrypt incoming PDU. */
             if (g_adapter.b_encrypted)
             {
-                //dbg_txt_rom("Encrypted CTL PDU received");
+                /* Decrypt PDU. */
+                ret = decrypt_pdu(
+                    header,
+                    p_pdu,
+                    length,
+                    (g_adapter.state == PERIPHERAL)
+                );
+
+                /* Check if decryption was successful */
+                if (ret == 0)
+                {
+                    /* Decryption in-place OK, push decrypted packet. */
+                    flags |= RX_QUEUE_FLAG_DECRYPTED;
+                }
+                else
+                {
+                    esp_rom_printf("[crypto] packet decryption failed\n");
+                }
+
                 /* Save PDU into RX queue. */
                 ret = rxqueue_append_pdu(
                     (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
@@ -1145,44 +1182,6 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 esp_rom_printf("Encrypted CTL PDU received\n");
                 
                 return HOOK_BLOCK;
-
-                #if 0
-                esp_rom_printf("Encrypted CTL PDU received\n");
-
-                /* Convert pdu to hex. */
-                for (int i=0; i<length; i++)
-                    snprintf(&dbg[2*i], 3, "%02x", p_pdu[i]);
-                esp_rom_printf("Header: 0x%02x 0x%02x\n", header&0xff, (header&0xff00)>>8);
-                esp_rom_printf("Dec. PDU: %s\n", dbg);
-
-                portDISABLE_INTERRUPTS();
-
-                p_payload = (uint8_t *)malloc(length);
-                memcpy(p_payload, p_pdu, length);
-
-                /* Decrypt PDU in place. PDU comes from master. */
-                if (decrypt_pdu(header, p_payload, length, true) != 0)
-                {
-                    debug_fifos();
-                    portENABLE_INTERRUPTS();
-                    return HOOK_BLOCK;
-                }
-                else
-                {
-                    memcpy(p_pdu, p_payload, length);
-
-                    /* Packet has been decrypted. */
-                    b_decrypted = true;
-
-                    /* Remove MIC. */
-                    length -= 4;
-
-                    /* Update packet header. */
-                    //set_packet_length(packet_num, length);
-                }
-                free(p_payload);
-                portENABLE_INTERRUPTS();
-                #endif
             }
             else
             {
@@ -1205,27 +1204,13 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 (p_pdu[0] == 0x0B) || // LL_PAUSE_ENC_RSP
                 (p_pdu[0] == 0x0C) || // LL_VERSION_IND
                 (p_pdu[0] == 0x0D) || // LL_REJECT_IND
+                //(p_pdu[0] == 0x0F) || // LL_CONNECTION_UPDATE_REQ
                 (p_pdu[0] == 0x12) || // LL_PING_REQ
                 (p_pdu[0] == 0x13) || // LL_PING_RSP
                 (p_pdu[0] == 0x14) || // LENGTH_REQ
                 (p_pdu[0] == 0x15)    // LENGTH_RSP
             )
             {
-                /* Notify host. */
-                #if 0
-                whad_ble_ll_data_pdu(
-                    &pdu,
-                    header,
-                    p_pdu,
-                    length,
-                    (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-                    g_adapter.conn_handle,
-                    false,
-                    b_decrypted
-                );
-                pending_pb_message(&pdu);
-                #endif
-
                 if (b_decrypted)
                     flags |= RX_QUEUE_FLAG_DECRYPTED;
 
@@ -1263,7 +1248,6 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 {
                     /* Error while decrypting, drop PDU. */
                     //dbg_txt("Error during PDU decryption, dropping PDU.");
-                    portENABLE_INTERRUPTS();
                     return HOOK_BLOCK;
                 }
                 else
@@ -1340,21 +1324,6 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
         break;
     }
 
-    #if 0
-    /* Notify host that a control PDU is about to be forwarded to NimBLE. */
-    whad_ble_ll_data_pdu(
-        &pdu,
-        header,
-        p_pdu,
-        length,
-        (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-        g_adapter.conn_handle,
-        true,
-        b_decrypted
-    );
-    pending_pb_message(&pdu);
-    #endif
-
     flags = RX_QUEUE_FLAG_PROCESSED;
     if (b_decrypted)
         flags |= RX_QUEUE_FLAG_DECRYPTED;
@@ -1375,6 +1344,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
     }
 
     /* Forward by default. */
+    esp_rom_printf("Forward pdu\n");
     return HOOK_FORWARD;
 }
 
@@ -1417,7 +1387,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
             length -= 4;
 
             /* Update packet header. */
-            set_packet_length(packet_num, length);
+            //set_packet_length(packet_num, length);
         }        
     }
 
@@ -1442,8 +1412,8 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
             //dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
             if (!g_adapter.b_l2cap_started)
             {
-                /* Make sure L2CAP header has the correct channel (attribute). */
-                if (*p_l2cap_channel == 0x04)
+                /* Make sure L2CAP header has the correct channel (attribute or SMP). */
+                if ((*p_l2cap_channel == 0x04) || (*p_l2cap_channel == 0x06))
                 {
                     /* L2CAP start fragment received, save expected size. */
                     g_adapter.b_l2cap_started = true;
@@ -1498,19 +1468,6 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
 
         if (b_valid_pkt)
         {
-            #if 0
-            whad_ble_ll_data_pdu(
-                &pdu,
-                header,
-                p_pdu,
-                length,
-                (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-                g_adapter.conn_handle,
-                false,
-                b_decrypted
-            );
-            pending_pb_message(&pdu);
-            #endif
             if (b_decrypted)
                 flags |= RX_QUEUE_FLAG_DECRYPTED;
 
@@ -2258,17 +2215,6 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
         g_adapter.enc_master_counter = 0;
         g_adapter.enc_slave_counter = 0;
 
-        /* Initialize AES CCM context. */
-        mbedtls_ccm_init(&g_adapter.enc_context);
-
-        /* Set AES key */
-        ret = mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
-        if(ret != 0)
-        {
-            res = 1;
-            g_adapter.b_encrypted = false;
-        }
-
         /* Set encryption status accordingly. */
         g_adapter.b_encrypted = encryption->enabled;
     }
@@ -2295,4 +2241,9 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
         send_pb_message(&cmd_result);           
     }
+
+    /* Disable encryption in BLE controller. */
+    printf("[adapter] RWBLECNTL=0x%08x\n", ble_read_rwblecntl());
+    ble_disable_crypto();
+    printf("[adapter] RWBLECNTL=0x%08x\n", ble_read_rwblecntl());
 }

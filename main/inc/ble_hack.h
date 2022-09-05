@@ -22,6 +22,13 @@
 #define BLE_RX_CUR_FIFO_ADDR      (0x3ffb8d74)
 #define BLE_RX_DESC_ADDR          (0x3ffb0950)
 
+#define RWBLECNTL                 (*(uint32_t *)(0x3ff71200))
+#define RWBLECONF                 (*(uint32_t *)(0x3ff71208))
+#define BLE_INTCNTL               (*(uint32_t *)(0x3ff7120C))
+#define BLE_INTSTAT               (*(uint32_t *)(0x3ff71210))
+#define BLE_INTRAWSTAT            (*(uint32_t *)(0x3ff71214))
+#define BLE_ERRORTYPESTAT         (*(uint32_t *)(0x3ff71260))
+
 #define HOOK_FORWARD          0x1
 #define HOOK_BLOCK            0x0
 
@@ -573,5 +580,10 @@ void _llc_llcp_version_ind_pdu_send(uint16_t conhdl);
 void _llc_llcp_terminate_ind_pdu_send(uint16_t conhdl, uint8_t err_code);
 
 void debug_fifos(void);
+
+/* Crypto hacking. */
+uint32_t ble_read_rwblecntl(void);
+void ble_write_rwblecntl(uint32_t value);
+void ble_disable_crypto(void);
 
 #endif /* __INC_ESP32_BLE_HACK_H */

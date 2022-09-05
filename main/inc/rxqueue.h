@@ -16,6 +16,7 @@
 
 #define RX_QUEUE_FLAG_PROCESSED 1
 #define RX_QUEUE_FLAG_DECRYPTED 2
+#define RX_QUEUE_FLAG_ENCRYPTED 4
 
 /* Add a PDU into our RX queue. */
 int rxqueue_append_pdu(uint8_t direction, uint8_t flags, uint16_t conn_handle, uint8_t llid, uint8_t length, uint8_t *p_pdu);

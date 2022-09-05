@@ -36,6 +36,8 @@ F_r_lld_pdu_data_tx_push pfn_lld_pdu_data_tx_push = NULL;
 
 F_rom_llc_llcp_send pfn_rom_llc_llcp_send = (void*)(0x40043ed4);
 
+volatile bool gb_busy = false;
+
 /* TODO */
 
 /* Declare LLCP original function types and global pointers */
@@ -85,6 +87,18 @@ F_llc_llcp_tester_send llc_llcp_tester_send = (F_llc_llcp_send)(LLC_LLCP_TESTER_
 extern uint32_t r_llc_util_get_nb_active_link(void);
 
 extern void r_em_buf_tx_free(struct em_buf_node *node);
+
+void disable_interrupts(void)
+{
+    portDISABLE_INTERRUPTS();
+    esp_rom_printf("Interrupts disabled\n");
+}
+
+void enable_interrupts(void)
+{
+    portENABLE_INTERRUPTS();
+    esp_rom_printf("Interrupts enabled\n");
+}
 
 /**
  * co_list_is_empty()
@@ -201,17 +215,34 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
   uint16_t pkt_status = *(uint16_t *)(BLE_RX_PKT_STATUS);
   int res;
   int i,j,k;
+  int skipped = 0;
   #ifdef BLE_HACK_DEBUG
   int i,j,k;
   #endif
 
+  esp_rom_printf("param1: 0x%08x, param2: %d\n", (uint32_t)param_1, param_2);
 
+  /* Are we already busy ? */
+  if (gb_busy)
+  {
+    esp_rom_printf("[rx handler] already busy\n");
+    return pfn_lld_pdu_rx_handler(param_1, param_2);
+  }
+
+  gb_busy = true;
+  
   /* BLE_RX_DESC_ADDR -> array of 12-byte items, the first 2 are offsets. */
   /* p_rx_buffer -> BLE RX/TX shared memory. */
   
   /* If we don't have any packet to process, just forward. */
   if ((param_2 == 0) || ((pkt_status & 0x13f) != 0))
   {
+    /* Re-enable interrupts. */
+    //portENABLE_INTERRUPTS();
+
+    /* Forward to original function. */
+    esp_rom_printf("forward 1\n");
+    gb_busy = false;
     return pfn_lld_pdu_rx_handler(param_1, param_2);
   }
 
@@ -261,6 +292,7 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             {
                 if (gpfn_on_rx_control_pdu != NULL)
                 {
+                    esp_rom_printf("call rx ctl handler\n");
                     forward = gpfn_on_rx_control_pdu(j, (uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
                 }
             }
@@ -271,6 +303,7 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             {
                 if (gpfn_on_rx_data_pdu != NULL)
                 {
+                    esp_rom_printf("call rx data handler\n");
                     forward = gpfn_on_rx_data_pdu(j, (uint16_t)(pkt_header & 0xffff), p_pdu, (pkt_header>>8)&0xff);
                 }
             }
@@ -278,21 +311,32 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             if (forward == HOOK_FORWARD)
             {
                 /* Forward to original handler. */
-                //return pfn_lld_pdu_rx_handler(param_1, param_2);
+                esp_rom_printf("must forward hook (%d, %d)\n", j, *((uint32_t *)(0x3ffb933c)));
+                //gb_busy = false;
+                //pfn_lld_pdu_rx_handler(param_1, 1);
+                esp_rom_printf("hook forwarded\n");
             }
             else
             {
                 /* Modify original PDU to set its length to 0. */
-                p_header[j].header &= 0xffff00ff;
-                //return pfn_lld_pdu_rx_handler(param_1, param_2);
+                esp_rom_printf("must block hook (%d)\n", *((uint32_t *)(0x3ffb933c)));
+                //p_header[j].header &= 0xffff00ff;
+                //gb_busy = false;
+                //pfn_lld_pdu_rx_handler(param_1, 1);
+                *((uint32_t *)(0x3ffb933c)) = (*((uint32_t *)(0x3ffb933c)) + 1) & 0x7;
+                skipped++;
             }
         }
       }  
     }
   }
 
+  /* Re-enable interrupts. */
+  gb_busy = false;
+
   /* Forward to original handler. */
-  return pfn_lld_pdu_rx_handler(param_1, param_2);
+  esp_rom_printf("final forward (%d)\n", param_2-skipped);
+  return pfn_lld_pdu_rx_handler(param_1, param_2-skipped);
 }
 
 
@@ -902,7 +946,7 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, boo
   struct lld_evt_tag *env = (struct lld_evt_tag *)(*(uint32_t*)((uint32_t)llc_env[conhdl]+0x10) + 0x28);
 
   /* Disable baseband watchdog. */
-  bb_wdt_int_enable(0);
+  //bb_wdt_int_enable(0);
 
   /* Allocate data_send. */
   data_send = (struct em_desc_node *)em_buf_tx_desc_alloc();
@@ -910,7 +954,7 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, boo
   /* Allocate a buffer. */
   node = em_buf_tx_alloc();
 
-  portDISABLE_INTERRUPTS();
+  //portDISABLE_INTERRUPTS();
 
   /* Write data into allocated buf node. */
   memcpy((uint8_t *)((uint8_t *)p_rx_buffer + node->buf_ptr), p_pdu, length);
@@ -924,9 +968,9 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, boo
   /* Call lld_pdu_data_tx_push */  
   pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
   //env->tx_prog.maxcnt--;
-  portENABLE_INTERRUPTS();
+  //portENABLE_INTERRUPTS();
 
-  bb_wdt_int_enable(1);
+  //bb_wdt_int_enable(1);
 }
 
 
@@ -996,7 +1040,7 @@ void ble_hack_install_hooks(void)
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_rx_handler, (uint32_t)_lld_pdu_rx_handler);
   #endif
   r_btdm_option_data[615] = (uint32_t *)_lld_pdu_rx_handler;
-  //g_bt_plf_log_level=10;
+  //g_bt_plf_log_level=3;
 
   /* Hook r_lld_pdu_data_send */
   pfn_lld_pdu_data_send = (void *)(((uint32_t *)g_ip_funcs_p)[598]);
@@ -1131,4 +1175,23 @@ void debug_fifos(void)
             esp_rom_printf("FIFO[%d]: %02x%02x%s\n", j, pkt_header&0xff, (pkt_header&0xff00)>>8, dbg);
         }
     }
+}
+
+uint32_t ble_read_rwblecntl(void)
+{
+    return RWBLECNTL;
+}
+
+void ble_write_rwblecntl(uint32_t value)
+{
+    RWBLECNTL = value;
+}
+
+void ble_disable_crypto(void)
+{
+    uint32_t value;
+
+    value = RWBLECNTL;
+    value |= (1 << 19); /* CRYPT_DSB = 1 */
+    RWBLECNTL = value;
 }

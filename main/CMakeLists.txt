@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
     "adapter.c"
     "comm.c"
+    "crypto.c"
     "dispatch.c"
     "helpers.c"
     "main.c"

@@ -1,6 +1,8 @@
 #ifndef ADAPTER_INC_H
 #define ADAPTER_INC_H
 
+#include "mbedtls/ccm.h"
+
 #include "nanopb/pb_encode.h"
 #include "nanopb/pb_decode.h"
 #include "protocol/generic.pb.h"
@@ -14,7 +16,6 @@
 #include "inc/ble_hack.h"
 #include "inc/rxqueue.h"
 
-#include "mbedtls/ccm.h"
 
 #define FIRMWARE_AUTHOR "Damien Cauquil"
 #define FIRMWARE_URL "https://github.com/virtualabs/esp32-fw.git"
@@ -74,6 +75,8 @@ typedef struct {
     /* Capabilities. */
     DeviceCapability *capabilities;
 } adapter_t;
+
+#include "inc/crypto.h"
 
 void adapter_init(void);
 
