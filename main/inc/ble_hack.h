@@ -586,4 +586,15 @@ uint32_t ble_read_rwblecntl(void);
 void ble_write_rwblecntl(uint32_t value);
 void ble_disable_crypto(void);
 
+typedef struct {
+    /* Shall we forward this packet ? */
+    bool b_forward;
+    /* Packet header */
+    uint32_t header;
+    /* Packet length. */
+    uint8_t length;
+    /* Packet PDU. */
+    uint8_t *pdu;
+} esp_packet_processed_t;
+
 #endif /* __INC_ESP32_BLE_HACK_H */
