@@ -112,7 +112,7 @@ void whad_discovery_device_info_resp(
     message->msg.discovery.msg.info_resp.max_speed = BAUDRATE_MAX;
     if (fw_author != NULL)
     {
-        strncpy((char *)message->msg.discovery.msg.info_resp.fw_author.bytes, (char *)fw_author, 64);
+        strncpy((char *)message->msg.discovery.msg.info_resp.fw_author.bytes, (char *)fw_author, 63);
         message->msg.discovery.msg.info_resp.fw_author.size = strlen(fw_author);
     }
     else
@@ -122,7 +122,7 @@ void whad_discovery_device_info_resp(
 
     if(fw_url != NULL)
     {
-        strncpy((char *)message->msg.discovery.msg.info_resp.fw_url.bytes, (char *)fw_url, 256);
+        strncpy((char *)message->msg.discovery.msg.info_resp.fw_url.bytes, (char *)fw_url, 255);
         message->msg.discovery.msg.info_resp.fw_url.size = strlen(fw_url);
     }
     else
@@ -134,7 +134,7 @@ void whad_discovery_device_info_resp(
     message->msg.discovery.msg.info_resp.fw_version_minor = fw_version_minor;
     message->msg.discovery.msg.info_resp.fw_version_rev = fw_version_rev;
     message->msg.discovery.msg.info_resp.type = device_type;
-    strncpy((char *)message->msg.discovery.msg.info_resp.devid, (char *)devid, 16);
+    strncpy((char *)message->msg.discovery.msg.info_resp.devid, (char *)devid, 15);
     message->msg.discovery.msg.info_resp.capabilities.arg = capabilities;
     message->msg.discovery.msg.info_resp.capabilities.funcs.encode = whad_disc_enum_capabilities_cb;
 }

@@ -594,7 +594,7 @@ typedef struct {
     /* Packet length. */
     uint8_t length;
     /* Packet PDU. */
-    uint8_t *pdu;
+    uint8_t pdu[256];
 } esp_packet_processed_t;
 
 #endif /* __INC_ESP32_BLE_HACK_H */

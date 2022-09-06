@@ -334,10 +334,12 @@ bool send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
             {
                 //dbg_txt("encryption ok");
 
+                #if 0
                 /* Show final encrypted packet. */
                 for (i=0; i<p_pdu[1]+4; i++)
                     snprintf(&dbg[i*2], 3, "%02x", p_pkt[i]);
                 esp_rom_printf("Encrypted packet: %s\n", dbg);
+                #endif
 
                 /* Send packet. */
                 //printf("Send raw data pdu ...\n");
@@ -1130,13 +1132,14 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
     int ret;
 
     /* Read RWBLECTNL () register. */
+    /*
     esp_rom_printf("RWBLECNTL: 0x%08x\n", ble_read_rwblecntl());
     esp_rom_printf("RWBLECONF: 0x%08x\n", RWBLECONF);
     esp_rom_printf("BLE_INTCNTL: 0x%08x\n", BLE_INTCNTL);
     esp_rom_printf("BLE_INTSTAT: 0x%08x\n", BLE_INTSTAT);
     esp_rom_printf("BLE_INTRAWSTAT: 0x%08x\n", BLE_INTRAWSTAT);
     esp_rom_printf("BLE_ERRORTYPESTAT: 0x%08x\n", BLE_ERRORTYPESTAT);
-
+    */
 
     switch (g_adapter.state)
     {
@@ -1156,12 +1159,20 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 /* Check if decryption was successful */
                 if (ret == 0)
                 {
+                    esp_rom_printf("[rx ctl] decryption OK\n");
+
                     /* Decryption in-place OK, push decrypted packet. */
                     flags |= RX_QUEUE_FLAG_DECRYPTED;
+
+                    length -= 4;
+
+                    set_packet_length(packet_num, length);
                 }
                 else
                 {
                     esp_rom_printf("[crypto] packet decryption failed\n");
+                    //debug_fifos();
+                    return HOOK_BLOCK;
                 }
 
                 /* Save PDU into RX queue. */
@@ -1170,7 +1181,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                     flags,
                     g_adapter.conn_handle,
                     header & 0xff,  /* LLID */
-                    (header & 0xff00) >> 8, /* length */
+                    length, /* length */
                     p_pdu
                 );
 
@@ -1178,20 +1189,16 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 {
                     esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
                 }
-                
-                esp_rom_printf("Encrypted CTL PDU received\n");
-                
-                return HOOK_BLOCK;
             }
-            else
-            {
-                /* Convert pdu to hex. */
-                for (int i=0; i<length; i++)
-                    snprintf(&dbg[2*i], 3, "%02x", p_pdu[i]);
 
-                esp_rom_printf("Header: 0x%02x 0x%02x\n", header&0xff, (header&0xff00)>>8);
-                esp_rom_printf("Clear. PDU: %s\n", dbg);
-            }
+            #if 0
+            /* Convert pdu to hex. */
+            for (int i=0; i<length; i++)
+                snprintf(&dbg[2*i], 3, "%02x", p_pdu[i]);
+
+            esp_rom_printf("Header: 0x%02x 0x%02x\n", header&0xff, (header&0xff00)>>8);
+            esp_rom_printf("Clear. PDU: %s\n", dbg);
+            #endif
 
             /* Only hook control PDUs that are not required by NimBLE. */
             if (
@@ -1344,7 +1351,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
     }
 
     /* Forward by default. */
-    esp_rom_printf("Forward pdu\n");
+    //esp_rom_printf("Forward pdu\n");
     return HOOK_FORWARD;
 }
 
@@ -1369,7 +1376,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
     /* If encryption is enabled, decrypt incoming PDU. */
     if (g_adapter.b_encrypted)
     {
-        //dbg_txt_rom("Encrypted Data PDU received");
+        dbg_txt_rom("Encrypted Data PDU received");
 
         /* Decrypt PDU in place. PDU comes from master. */
         if (decrypt_pdu(header, p_pdu, length, (g_adapter.state == PERIPHERAL)) != 0)
@@ -1387,7 +1394,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
             length -= 4;
 
             /* Update packet header. */
-            //set_packet_length(packet_num, length);
+            set_packet_length(packet_num, length);
         }        
     }
 
@@ -2214,6 +2221,12 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
         /* Reset master and slave counters. */
         g_adapter.enc_master_counter = 0;
         g_adapter.enc_slave_counter = 0;
+
+        /* Initialize context. */
+        mbedtls_ccm_init(&g_adapter.enc_context);
+
+        /* Set AES key */
+        mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
 
         /* Set encryption status accordingly. */
         g_adapter.b_encrypted = encryption->enabled;

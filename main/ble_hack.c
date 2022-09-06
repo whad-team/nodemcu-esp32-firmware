@@ -1,6 +1,11 @@
 #include "inc/ble_hack.h"
 #include "inc/helpers.h"
 #include "esp_bt.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+SemaphoreHandle_t ble_mutex = NULL;
+#define lld_evt_end_need_run_flag (*(uint8_t *)(0x3ffc6ec4))
 
 /* Callback functions. */
 FBLEHACK_IsrCallback gpfn_on_rx_data_pdu = NULL;
@@ -37,6 +42,7 @@ F_r_lld_pdu_data_tx_push pfn_lld_pdu_data_tx_push = NULL;
 F_rom_llc_llcp_send pfn_rom_llc_llcp_send = (void*)(0x40043ed4);
 
 volatile bool gb_busy = false;
+volatile int g_step = 0;
 
 /* TODO */
 
@@ -200,7 +206,7 @@ void set_packet_length(int packet_num, uint8_t length)
  * Hook for r_lld_pdu_rx_handler(), called each time a BLE packet (header + PDU) is received.
  **/
 
-int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
+int _lld_pdu_rx_handler(int param_1,int param_2)
 {
   int forward = HOOK_FORWARD;
   uint16_t *p_offset;
@@ -230,20 +236,28 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
    * structures and eventually return to the normal execution flow. 
    */
 
-  esp_rom_printf("param1: 0x%08x, param2: %d\n", (uint32_t)param_1, param_2);
+  if (gb_busy)
+  {
+    esp_rom_printf("[rx handler] already busy (%d)\n", g_step);
+    //pfn_lld_pdu_rx_handler(param_1, 1);
+    return 0;
+  }
 
+  gb_busy = true;
     
   /* We retrieve the fifo index from memory. */
   fifo_index = ((uint8_t *)BLE_RX_CUR_FIFO_ADDR)[0x5c8];
 
   /* 0. If we don't have any packet to process, just forward. */
+  g_step = 0;
   if ((param_2 == 0) || ((pkt_status & 0x13f) != 0))
   {
     /* Re-enable interrupts. */
     //portENABLE_INTERRUPTS();
 
     /* Forward to original function. */
-    esp_rom_printf("forward 1\n");
+    gb_busy = false;
+    
     return pfn_lld_pdu_rx_handler(param_1, param_2);
   }
 
@@ -254,10 +268,11 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
   {
     if (r_llc_util_get_nb_active_link() > 0)
     {
-        esp_rom_printf("Current SW FIFO index: %d\n", *((uint32_t *)(0x3ffb933c)));
+        //esp_rom_printf("param1: 0x%08x, param2: %d\n", (uint32_t)param_1, param_2);
+        //esp_rom_printf("Current SW FIFO index: %d\n", *((uint32_t *)(0x3ffb933c)));
 
         /* 1. We parse all the packets and moved them into dynamically allocated structures. */
-
+        g_step = 1;
         for (k=0; k<param_2; k++)
         {
             j = (fifo_index + k) % 8;
@@ -271,76 +286,54 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
             pkt_size = (pkt_header >> 8) & 0xff;
 
             /* Fill current RX packet. */
+            p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*j);
+            p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
             packets[proc_pkt_idx].b_forward = false;
             packets[proc_pkt_idx].header = pkt_header;
             packets[proc_pkt_idx].length = pkt_size;
+            //packets[proc_pkt_idx].pdu = p_pdu;
 
             if (pkt_size > 0)
             {
-                packets[proc_pkt_idx].pdu = (uint8_t*)malloc(pkt_size);
-                if (packets[proc_pkt_idx].pdu != NULL)
+                memcpy(packets[proc_pkt_idx].pdu, p_pdu, pkt_size);
+
+                /* Call our hook (if any) in case of a control PDU. */
+                if ((pkt_header & 0x03) == 0x3)
                 {
-                    /* Copy PDU into RAM. */
-                    p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*j);
-                    p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
-                    memcpy(packets[proc_pkt_idx].pdu, p_pdu, pkt_size);
-
-                    /* Call our hook (if any) in case of a control PDU. */
-                    if ((pkt_header & 0x03) == 0x3)
+                    if (gpfn_on_rx_control_pdu != NULL)
                     {
-                        if (gpfn_on_rx_control_pdu != NULL)
-                        {
-                            esp_rom_printf("call rx ctl handler\n");
-                            forward = gpfn_on_rx_control_pdu(
-                                j,
-                                (uint16_t)(pkt_header & 0xffff),
-                                packets[proc_pkt_idx].pdu,
-                                pkt_size
-                            );
+                        //esp_rom_printf("call rx ctl handler\n");
+                        forward = gpfn_on_rx_control_pdu(
+                            j,
+                            (uint16_t)(pkt_header & 0xffff),
+                            packets[proc_pkt_idx].pdu,
+                            packets[proc_pkt_idx].length
+                        );
 
-                            /* Should we forward this packet ? */
-                            packets[proc_pkt_idx].b_forward = (forward == HOOK_FORWARD);
-                            if (!packets[proc_pkt_idx].b_forward)
-                            {
-                                esp_rom_printf("rx ctl must be skipped\n");
-                            }
-                        }
-                    }
-                    
-                    /* Or call our other hook (if any) in case of a data PDU. */
-                    else if ((pkt_header & 0x03) != 0)
-                    {
-                        if (gpfn_on_rx_data_pdu != NULL)
-                        {
-                            esp_rom_printf("call rx data handler\n");
-                            forward = gpfn_on_rx_data_pdu(
-                                j,
-                                (uint16_t)(pkt_header & 0xffff),
-                                packets[proc_pkt_idx].pdu,
-                                pkt_size
-                            );
-
-                            /* Should we forward this packet ? */
-                            packets[proc_pkt_idx].b_forward = (forward == HOOK_FORWARD);
-                            if (!packets[proc_pkt_idx].b_forward)
-                            {
-                                esp_rom_printf("rx data must be skipped\n");
-                            }
-                        }
+                        /* Should we forward this packet ? */
+                        packets[proc_pkt_idx].b_forward = (forward == HOOK_FORWARD);
                     }
                 }
-                else
+                
+                /* Or call our other hook (if any) in case of a data PDU. */
+                else if ((pkt_header & 0x03) != 0)
                 {
-                    /* Allocation error. */
-                    esp_rom_printf("[rx hook] cannot allocate memory\n");
+                    if (gpfn_on_rx_data_pdu != NULL)
+                    {
+                        //esp_rom_printf("call rx data handler\n");
+                        forward = gpfn_on_rx_data_pdu(
+                            j,
+                            (uint16_t)(pkt_header & 0xffff),
+                            packets[proc_pkt_idx].pdu,
+                            packets[proc_pkt_idx].length
+                        );
+
+                        /* Should we forward this packet ? */
+                        packets[proc_pkt_idx].b_forward = (forward == HOOK_FORWARD);
+                    }
                 }
             }
-            else
-            {
-                esp_rom_printf("got empty packet\n");
-                packets[proc_pkt_idx].pdu = NULL;
-            }
-
+            g_step++;
             /* Increment rx pkt index. */
             proc_pkt_idx++;
         }
@@ -351,54 +344,38 @@ int IRAM_ATTR _lld_pdu_rx_handler(int param_1,int param_2)
         * RX FIFO index for every skipped packet, and rewrite the forwarded packets into
         * the last RX FIFOs.
         **/
+        g_step = 10;
         for (i=0; i<proc_pkt_idx; i++)
         {
+            //j = (fifo_index + i) % 8;
+
             if (!packets[i].b_forward)
             {
-                skipped++;
-                *((uint32_t *)(0x3ffb933c)) += 1;
-            }
-        }
-        esp_rom_printf("skipping %d packets\n", skipped);
+                /* Turn packet into an empty packet. */
+                packets[i].header &= 0xffff0000;
+                packets[i].header |= 0xffff0002;
 
-        /* 3. Rewrite the PDUs in the correct RX FIFOs headers and buffers. */
-        for (i=0; i<proc_pkt_idx; i++)
-        {
-            j = (fifo_index + i + skipped) % 8;
-
-            if (packets[i].b_forward)
-            {
                 /* Update header. */
                 p_header[j].header = packets[i].header;
-
-                /* Retrieve a pointer to the corresponding FIFO PDU buffer. */
-                p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*j);
-                p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
-
-                /* Copy packet content and free. */
-                if (packets[i].pdu != NULL)
+            }
+            else
+            {
+                if (packets[i].length > 0)
                 {
-                    memcpy(p_pdu, packets[i].pdu, packets[i].length);
-                    free(packets[i].pdu);
+                    /* Copy RAM into PDU. */
+                    p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*j);
+                    p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
+                    memcpy(p_pdu, packets[i].pdu, packets[i].length);             
                 }
             }
         }
     }
-    else
-    {
-        /* Forward to original function. */
-    esp_rom_printf("forward 2\n");
-    return pfn_lld_pdu_rx_handler(param_1, param_2);
-    }
   }
 
-  /* Current fifo debug. */
-  esp_rom_printf("Current SW FIFO index: %d\n", *((uint32_t *)(0x3ffb933c)));
-  esp_rom_printf("Current HW FIFO index: %d\n", fifo_index);
+  gb_busy = false;
 
   /* Forward to original handler. */
-  esp_rom_printf("Forward to orig handler with %d packets\n", param_2 - skipped);
-  return pfn_lld_pdu_rx_handler(param_1, param_2 - skipped);
+  return pfn_lld_pdu_rx_handler(param_1, param_2);
 }
 
 
@@ -1016,7 +993,7 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, boo
   /* Allocate a buffer. */
   node = em_buf_tx_alloc();
 
-  //portDISABLE_INTERRUPTS();
+  portDISABLE_INTERRUPTS();
 
   /* Write data into allocated buf node. */
   memcpy((uint8_t *)((uint8_t *)p_rx_buffer + node->buf_ptr), p_pdu, length);
@@ -1030,7 +1007,7 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, boo
   /* Call lld_pdu_data_tx_push */  
   pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
   //env->tx_prog.maxcnt--;
-  //portENABLE_INTERRUPTS();
+  portENABLE_INTERRUPTS();
 
   //bb_wdt_int_enable(1);
 }
@@ -1096,6 +1073,8 @@ void send_control_pdu(int conhdl, uint8_t *p_pdu, int length)
 
 void ble_hack_install_hooks(void)
 {
+  ble_mutex = xSemaphoreCreateMutex();
+
   /* Hook r_lld_pdu_rx_handler() */
   pfn_lld_pdu_rx_handler = (void *)(r_btdm_option_data[615]);
   #ifdef BLE_HACK_DEBUG
@@ -1103,6 +1082,15 @@ void ble_hack_install_hooks(void)
   #endif
   r_btdm_option_data[615] = (uint32_t *)_lld_pdu_rx_handler;
   //g_bt_plf_log_level=3;
+  
+  #if 0
+  /* Hook r_lld_pdu_rx_handler() */
+  pfn_lld_pdu_rx_handler = (void *)(((uint32_t *)g_ip_funcs_p)[604]);
+  #ifdef BLE_HACK_DEBUG
+  printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_rx_handler, (uint32_t)_lld_pdu_rx_handler);
+  #endif
+  ((uint32_t *)g_ip_funcs_p)[604] = (uint32_t)_lld_pdu_rx_handler;
+  #endif
 
   /* Hook r_lld_pdu_data_send */
   pfn_lld_pdu_data_send = (void *)(((uint32_t *)g_ip_funcs_p)[598]);
@@ -1130,6 +1118,7 @@ void ble_hack_install_hooks(void)
   /**
    * Install LLCP hooks
    **/
+  #if 0
   INSTALL_HOOK(492, llc_llcp_version_ind_pdu_send)
   //INSTALL_HOOK(493, llc_llcp_ch_map_update_pdu_send)
   //INSTALL_HOOK(494, llc_llcp_pause_enc_req_pdu_send)
@@ -1151,6 +1140,7 @@ void ble_hack_install_hooks(void)
   INSTALL_HOOK(510, llc_llcp_length_req_pdu_send)
   INSTALL_HOOK(511, llc_llcp_length_rsp_pdu_send)
   //INSTALL_HOOK(512, llc_llcp_tester_send)
+  #endif
 }
 
 /**
