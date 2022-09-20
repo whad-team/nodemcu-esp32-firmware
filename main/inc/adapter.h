@@ -47,6 +47,10 @@ typedef struct {
     bool b_spoof_addr;
     bool b_enabled;
 
+    /* Packet RX/TX queues. */
+    packet_queue_t tx_queue;
+    packet_queue_t rx_queue;
+
     /* Encryption material. */
     bool b_encrypted;
     int enc_master_counter;
@@ -91,6 +95,7 @@ int ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int leng
 int ble_rx_data_handler(int packet_num, uint16_t header,uint8_t *p_pdu, int length);
 int ble_tx_data_handler(int packet_num, uint16_t header,uint8_t *p_pdu, int length);
 int ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu);
+void ble_tx_prog_handler(void);
 
 /* Callbacks. */
 void adapter_on_unsupported(Message *message);
@@ -126,5 +131,29 @@ void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr);
 void adapter_on_reset(void);
 void adapter_on_set_speed(discovery_SetTransportSpeed *speed);
 void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption);
+
+/* TX/RX queues. */
+
+int adapter_rxqueue_size(void);
+int adapter_rxqueue_get(
+    uint8_t *p_direction,
+    uint8_t *p_flags,
+    uint16_t *p_conn_handle,
+    uint8_t *p_llid,
+    uint8_t *p_length,
+    uint8_t *p_pdu
+);
+
+int adapter_txqueue_size(void);
+int adapter_txqueue_append(
+    packet_queue_t *queue,
+    uint8_t direction,
+    uint8_t flags,
+    uint16_t conn_handle,
+    uint8_t llid,
+    uint8_t length,
+    uint8_t *p_pdu
+);
+
 
 #endif /* ADAPTER_INC_H */

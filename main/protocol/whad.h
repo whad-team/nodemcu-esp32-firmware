@@ -6,8 +6,8 @@
 #include "protocol/whad.pb.h"
 
 //460800
-//#define BAUDRATE_MAX 460800
-#define BAUDRATE_MAX 115200
+#define BAUDRATE_MAX 921600
+//#define BAUDRATE_MAX 115200
 
 typedef struct {
     discovery_Domain domain;

@@ -553,6 +553,7 @@ typedef struct {
 typedef int (*FBLEHACK_IsrCallback)(int packet_num, uint16_t *p_header, uint8_t *p_pdu, int length);
 typedef int (*FBLEHACK_CtlCallback)(llcp_opinfo *p_llcp_pdu);
 typedef int (*F_rom_llc_llcp_send)(int conhdl, uint8_t *p_pdu, uint8_t opcode);
+typedef void (*FBLEHACK_ProgPacketsCallback)(void);
 
 /* Printf() equivalent required to display debug info when in ISR (callbacks). */
 int esp_rom_printf( const char *restrict format, ... );
@@ -565,6 +566,7 @@ void ble_hack_rx_control_pdu_handler(FBLEHACK_IsrCallback pfn_control_callback);
 void ble_hack_rx_data_pdu_handler(FBLEHACK_IsrCallback pfn_data_callback);
 void ble_hack_tx_control_pdu_handler(FBLEHACK_CtlCallback pfn_control_callback);
 void ble_hack_tx_data_pdu_handler(FBLEHACK_IsrCallback pfn_data_callback);
+void ble_hack_tx_prog_packets(FBLEHACK_ProgPacketsCallback pfn_prog_callback);
 
 void set_packet_length(int packet_num, uint8_t length);
 

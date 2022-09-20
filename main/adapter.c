@@ -43,275 +43,18 @@ static uint64_t g_ble_supported_commands = (
 
 static int blecent_gap_event(struct ble_gap_event *event, void *arg);
 static uint8_t peer_addr[6];
-
 void ble_store_config_init(void);
+char dbg[256];
+uint8_t _pdu[256];
+Message pdu_msg;
 
-int  hungry(void)
-{
-    char toto[2000];
-
-    dbg_txt("hungry !");
-
-    return 0;
-}
-
-#if 0
-int encrypt_pdu(uint8_t llid, uint8_t *p_pdu, int length, uint8_t *p_output, bool b_master)
-{
-    uint8_t nonce[13];
-    uint8_t enc_pdu[256];
-    uint32_t mic;
-    uint8_t aad = llid;
-    int ret = 0, i;
-    char dbg[256];
-    
-    /* Generate nonce */
-    if (b_master)
-    {
-        /**
-         * Copy packet counter. Counter is supposed to be on 39 bits, but we
-         * are only copying 32 bits because we're lazy. Hope a connection won't
-         * send billions of packets ...
-         */
-        memcpy(&nonce[0], &g_adapter.enc_master_counter, 4);
-        nonce[4] = 0x80; /* Master counter used */
-        memcpy(&nonce[5], g_adapter.enc_iv, 8);
-    }
-    else
-    {
-        /**
-         * Copy packet counter. Counter is supposed to be on 39 bits, but we
-         * are only copying 32 bits because we're lazy. Hope a connection won't
-         * send billions of packets ...
-         */
-        memcpy(&nonce[0], &g_adapter.enc_slave_counter, 4);
-        nonce[4] = 0x00; /* Slave counter used */
-        memcpy(&nonce[5], g_adapter.enc_iv, 8);        
-    }
-
-    /* Initialize context. */
-    mbedtls_ccm_init(&g_adapter.enc_context);
-
-    /* Set AES key */
-    mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
-    
-    #if 0
-    /* Show plaintext PDU. */
-    for (i=0; i<length; i++)
-    {
-        snprintf(&dbg[i*2], 3, "%02x", p_pdu[i]);
-    }
-    esp_rom_printf("Plaintext PDU: %s\n", dbg);
-    #endif
-
-    /* Encrypt PDU and generate MIC. */
-    ret = mbedtls_ccm_encrypt_and_tag(
-        &g_adapter.enc_context,
-        length,
-        nonce,
-        13,
-        &aad,
-        1,
-        p_pdu,
-        p_output,
-        &p_output[length],
-        4
-    );
- 
-    #if 0
-    /* Show input after encryption. */
-    for (i=0; i<length; i++)
-    {
-        snprintf(&dbg[i*2], 3, "%02x", p_pdu[i]);
-    }
-    esp_rom_printf("Plaintext PDU after enc.: %s\n", dbg);
-    
-
-    /* Show encrypted. */
-    for (i=0; i<length+4; i++)
-        snprintf(&dbg[i*2], 3, "%02x", p_output[i]);
-    esp_rom_printf("Enc PDU: %s\n", dbg);
-    #endif
-
-    /* Free context. */
-    mbedtls_ccm_free(&g_adapter.enc_context);
-
-    if (ret == 0)
-    {
-        //dbg_txt("Encryption succeeded !");
-        if (b_master)
-        {
-            g_adapter.enc_master_counter++;
-            //dbg_txt("enc pkt master count: %d", g_adapter.enc_master_counter);
-        }
-        else
-        {
-            g_adapter.enc_slave_counter++;
-            //dbg_txt("enc pkt slave count: %d", g_adapter.enc_slave_counter);
-        }
-
-        /* Success. */
-        return 0;
-    }
-    else
-    {
-        dbg_txt_rom("Error while encrypting packet (%d)", ret);
-        
-        /* Error. */
-        return 1;
-    }
-
-    return 0;
-}
-
-/**
- * @brief Decrypt PDU
- * 
- * @param header Data LL header
- * @param p_pdu pointer to the PDU payload to decrypt
- * @param length length of payload
- * @param b_master true if PDU comes from a Central device, false otherwise
- * @return int 0 on success, 1 on error
- */
-int decrypt_pdu(uint16_t header, uint8_t *p_pdu, int length, bool b_master)
-{
-    uint8_t nonce[13];
-    uint8_t dec_pdu[256];
-    uint32_t mic;
-    uint8_t aad = (header&0xe3);
-    int ret = 0, i;
-
-    char dbg[300];
-
-    esp_rom_printf("PDU header: %02x %02x\n", (header&0xff), (header & 0xff00)>>8);
-
-    /* Convert pdu to hex. */
-    for (i=0; i<length; i++)
-        snprintf(&dbg[2*i], 3, "%02x", p_pdu[i]);
-    esp_rom_printf("Enc. PDU: %s\n", dbg);
-
-
-    #if 0
-    /* Display the received PDU and header. */
-    dbg_txt_rom("Master counter: %d", g_adapter.enc_master_counter);
-    dbg_txt_rom("Slave counter: %d", g_adapter.enc_slave_counter);
-    dbg_txt_rom("PDU header: 0x%04x", header);
-
-    /* Convert pdu to hex. */
-    for (i=0; i<length; i++)
-        snprintf(&dbg[2*i], 3, "%02x", p_pdu[i]);
-    dbg_txt_rom("Enc. PDU: %s", dbg);
-
-    /* Convert key to hex. */
-    for (i=0; i<16; i++)
-        snprintf(&dbg[2*i], 3, "%02x", g_adapter.enc_key[i]);
-    dbg_txt_rom("Enc. key: %s", dbg);
-
-    /* Convert iv to hex. */
-    for (i=0; i<8; i++)
-        snprintf(&dbg[2*i], 3, "%02x", g_adapter.enc_iv[i]);
-    dbg_txt_rom("Enc. IV: %s", dbg);    
-    #endif
-
-    /* Generate nonce */
-    if (b_master)
-    {
-        /**
-         * Copy packet counter. Counter is supposed to be on 39 bits, but we
-         * are only copying 32 bits because we're lazy. Hope a connection won't
-         * send billions of packets ...
-         */
-        memcpy(&nonce[0], &g_adapter.enc_master_counter, 4);
-        nonce[4] = 0x80; /* Master counter used */
-        memcpy(&nonce[5], g_adapter.enc_iv, 8);
-    }
-    else
-    {
-        /**
-         * Copy packet counter. Counter is supposed to be on 39 bits, but we
-         * are only copying 32 bits because we're lazy. Hope a connection won't
-         * send billions of packets ...
-         */
-        memcpy(&nonce[0], &g_adapter.enc_slave_counter, 4);
-        nonce[4] = 0x00; /* Slave counter used */
-        memcpy(&nonce[5], g_adapter.enc_iv, 8);        
-    }
-
-    /* Convert nonce to hex. */
-    for (i=0; i<13; i++)
-        snprintf(&dbg[2*i], 3, "%02x", nonce[i]);
-    esp_rom_printf("Nonce : %s\n", dbg);
-
-    /* Initialize context. */
-    mbedtls_ccm_init(&g_adapter.enc_context);
-
-    /* Set AES key */
-    mbedtls_ccm_setkey(&g_adapter.enc_context, MBEDTLS_CIPHER_ID_AES, g_adapter.enc_key, 128);
-
-    ret= mbedtls_ccm_auth_decrypt(
-        &g_adapter.enc_context,
-        length-4,
-        nonce,
-        13,
-        &aad,
-        1,
-        p_pdu,
-        dec_pdu,
-        &p_pdu[length-4],
-        4
-    );
-
-    /* Free context. */
-    mbedtls_ccm_free(&g_adapter.enc_context);
-
-    if (ret == 0)
-    {
-        //dbg_txt_rom("Decryption succeeded !");
-        esp_rom_printf("Decryption succeeded !\n");
-
-        /* Increment counter. */
-        if (b_master)
-        {
-            g_adapter.enc_master_counter++;
-            esp_rom_printf("pkt master count: %d\n", g_adapter.enc_master_counter);
-        }
-        else
-        {
-            g_adapter.enc_slave_counter++;
-            esp_rom_printf("pkt slave count: %d\n", g_adapter.enc_slave_counter);
-        }
-        
-        /* Copy decrypted pdu into original one. */
-        memcpy(p_pdu, dec_pdu, length-4);
-        
-        /* Success. */
-        return 0;
-    }
-    else
-    {
-        esp_rom_printf("Error while decrypting packet (%d)\n", ret);
-        if (b_master)
-        {
-            esp_rom_printf("pkt master count: %d\n", g_adapter.enc_master_counter);
-        }
-        else
-        {
-            esp_rom_printf("pkt slave count: %d\n", g_adapter.enc_slave_counter);
-        }
-        /* Error. */
-        return 1;
-    }
-}
-#endif
-
-bool send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
+bool IRAM_ATTR send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
 {
     bool b_sent = false;
     uint8_t *p_pkt = NULL;
     uint16_t *pkt_count;
     struct ble_hs_conn *conn;
     int res,i;
-    char dbg[256];
 
     /* Handle encryption. */
     if (b_encrypt)
@@ -321,7 +64,6 @@ bool send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
         if (p_pkt != NULL)
         {
             /* Encrypt PDU. */
-            //printf("Encrypt PDU (LLID=%02x, length=%d)\n", p_pdu[0], p_pdu[1]);
             res = encrypt_pdu(
                 p_pdu[0],     /* LLID */
                 &p_pdu[2],    /* plaintext PDU payload */
@@ -332,35 +74,21 @@ bool send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
 
             if (!res)
             {
-                //dbg_txt("encryption ok");
-
-                #if 0
-                /* Show final encrypted packet. */
-                for (i=0; i<p_pdu[1]+4; i++)
-                    snprintf(&dbg[i*2], 3, "%02x", p_pkt[i]);
-                esp_rom_printf("Encrypted packet: %s\n", dbg);
-                #endif
-
                 /* Send packet. */
-                //printf("Send raw data pdu ...\n");
                 send_raw_data_pdu(
                     g_adapter.conn_handle,
-                    p_pdu[0],
-                    p_pkt,
-                    //p_pkt[1],
-                    //p_pdu[0],
-                    //&p_pdu[2],
-                    p_pdu[1]+4,
+                    p_pdu[0],   // original LLID
+                    p_pkt,        // encrypted PDU
+                    p_pdu[1]+4, // length + size of MIC
                     true
                 );
-                //printf("Sent.\n");
 
                 /* Packet has been sent. */
                 b_sent = true;             
             }
             else
             {
-                dbg_txt("Error while encrypting: %d", res);
+                esp_rom_printf("Error while encrypting: %d", res);
             }
 
             /* Free encrypted packet. */
@@ -439,6 +167,10 @@ void adapter_init(void)
     g_adapter.l2cap_pkt_size = 0;
     g_adapter.l2cap_recv_bytes = 0;
 
+    /* Initialize RX/TX queues. */
+    packet_queue_init(&g_adapter.tx_queue);
+    packet_queue_init(&g_adapter.rx_queue);
+
     /* Initialize NVS — it is used to store PHY calibration data */
     esp_err_t ret = nvs_flash_init();
     if  (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -494,169 +226,6 @@ void adapter_init(void)
     whad_discovery_ready_resp(&msg);
     send_pb_message(&msg);
 
-}
-
-/****************************************************
- * NimBLE callbacks & helpers
- ***************************************************/
-
-/**
- * Application callback.  Called when the attempt to subscribe to notifications
- * for the ANS Unread Alert Status characteristic has completed.
- */
-static int
-blecent_on_subscribe(uint16_t conn_handle,
-                     const struct ble_gatt_error *error,
-                     struct ble_gatt_attr *attr,
-                     void *arg)
-{
-    MODLOG_DFLT(INFO, "Subscribe complete; status=%d conn_handle=%d "
-                "attr_handle=%d\n",
-                error->status, conn_handle, attr->handle);
-
-    return 0;
-}
-
-/**
- * Application callback.  Called when the write to the ANS Alert Notification
- * Control Point characteristic has completed.
- */
-static int
-blecent_on_write(uint16_t conn_handle,
-                 const struct ble_gatt_error *error,
-                 struct ble_gatt_attr *attr,
-                 void *arg)
-{
-    MODLOG_DFLT(INFO,
-                "Write complete; status=%d conn_handle=%d attr_handle=%d\n",
-                error->status, conn_handle, attr->handle);
-
-    /* Subscribe to notifications for the Unread Alert Status characteristic.
-     * A central enables notifications by writing two bytes (1, 0) to the
-     * characteristic's client-characteristic-configuration-descriptor (CCCD).
-     */
-    const struct peer_dsc *dsc;
-    uint8_t value[2];
-    int rc;
-    const struct peer *peer = peer_find(conn_handle);
-
-    dsc = peer_dsc_find_uuid(peer,
-                             BLE_UUID16_DECLARE(BLECENT_SVC_ALERT_UUID),
-                             BLE_UUID16_DECLARE(BLECENT_CHR_UNR_ALERT_STAT_UUID),
-                             BLE_UUID16_DECLARE(BLE_GATT_DSC_CLT_CFG_UUID16));
-    if (dsc == NULL) {
-        MODLOG_DFLT(ERROR, "Error: Peer lacks a CCCD for the Unread Alert "
-                    "Status characteristic\n");
-        goto err;
-    }
-
-    value[0] = 1;
-    value[1] = 0;
-    rc = ble_gattc_write_flat(conn_handle, dsc->dsc.handle,
-                              value, sizeof value, blecent_on_subscribe, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; "
-                    "rc=%d\n", rc);
-        goto err;
-    }
-
-    return 0;
-err:
-    /* Terminate the connection. */
-    return ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-}
-
-/**
- * Application callback.  Called when the read of the ANS Supported New Alert
- * Category characteristic has completed.
- */
-static int
-blecent_on_read(uint16_t conn_handle,
-                const struct ble_gatt_error *error,
-                struct ble_gatt_attr *attr,
-                void *arg)
-{
-    MODLOG_DFLT(INFO, "Read complete; status=%d conn_handle=%d", error->status,
-                conn_handle);
-    if (error->status == 0) {
-        MODLOG_DFLT(INFO, " attr_handle=%d value=", attr->handle);
-        print_mbuf(attr->om);
-    }
-    MODLOG_DFLT(INFO, "\n");
-
-    /* Write two bytes (99, 100) to the alert-notification-control-point
-     * characteristic.
-     */
-    const struct peer_chr *chr;
-    uint8_t value[2];
-    int rc;
-    const struct peer *peer = peer_find(conn_handle);
-
-    chr = peer_chr_find_uuid(peer,
-                             BLE_UUID16_DECLARE(BLECENT_SVC_ALERT_UUID),
-                             BLE_UUID16_DECLARE(BLECENT_CHR_ALERT_NOT_CTRL_PT));
-    if (chr == NULL) {
-        MODLOG_DFLT(ERROR, "Error: Peer doesn't support the Alert "
-                    "Notification Control Point characteristic\n");
-        goto err;
-    }
-
-    value[0] = 99;
-    value[1] = 100;
-    rc = ble_gattc_write_flat(conn_handle, chr->chr.val_handle,
-                              value, sizeof value, blecent_on_write, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Error: Failed to write characteristic; rc=%d\n",
-                    rc);
-        goto err;
-    }
-
-    return 0;
-err:
-    /* Terminate the connection. */
-    return ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-}
-
-/**
- * Performs three GATT operations against the specified peer:
- * 1. Reads the ANS Supported New Alert Category characteristic.
- * 2. After read is completed, writes the ANS Alert Notification Control Point characteristic.
- * 3. After write is completed, subscribes to notifications for the ANS Unread Alert Status
- *    characteristic.
- *
- * If the peer does not support a required service, characteristic, or
- * descriptor, then the peer lied when it claimed support for the alert
- * notification service!  When this happens, or if a GATT procedure fails,
- * this function immediately terminates the connection.
- */
-static void
-blecent_read_write_subscribe(const struct peer *peer)
-{
-    const struct peer_chr *chr;
-    int rc;
-
-    /* Read the supported-new-alert-category characteristic. */
-    chr = peer_chr_find_uuid(peer,
-                             BLE_UUID16_DECLARE(BLECENT_SVC_ALERT_UUID),
-                             BLE_UUID16_DECLARE(BLECENT_CHR_SUP_NEW_ALERT_CAT_UUID));
-    if (chr == NULL) {
-        MODLOG_DFLT(ERROR, "Error: Peer doesn't support the Supported New "
-                    "Alert Category characteristic\n");
-        goto err;
-    }
-
-    rc = ble_gattc_read(peer->conn_handle, chr->chr.val_handle,
-                        blecent_on_read, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Error: Failed to read characteristic; rc=%d\n",
-                    rc);
-        goto err;
-    }
-
-    return;
-err:
-    /* Terminate the connection. */
-    ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
 }
 
 /**
@@ -1122,24 +691,94 @@ static void blecent_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+void IRAM_ATTR ble_tx_prog_handler(void)
+{
+    uint8_t direction, flags, llid, length;
+    uint16_t conn_handle;
+    int ret;
+    bool res;
+
+    if (g_adapter.conn_handle >= 0)
+    {
+        /* Check queue size. */
+        if (g_adapter.tx_queue.size > 0)
+        {
+            //esp_rom_printf("[tx_prog hook] txqueue: %d\n", g_adapter.tx_queue.size);
+
+            /* We still have some data to send. */
+            _pdu[1] = 254;
+            ret = packet_queue_pop(
+                &g_adapter.tx_queue,
+                &direction,
+                &flags, 
+                &conn_handle,
+                &_pdu[0],    /* First byte is LLID */
+                &_pdu[1],    /* Second byte is length */
+                &_pdu[2]     /* Next is BLE PDU */
+            );
+
+            /* PDU successfully extracted from queue. */
+            if (ret == RX_QUEUE_SUCCESS)
+            {
+                /* Include LLID and length in data to send. */
+                length = _pdu[1] + 2;
+
+                switch (g_adapter.state)
+                {
+                    case CENTRAL:
+                    {
+                        //if (direction == ble_BleDirection_MASTER_TO_SLAVE)
+                        if (1)
+                        {
+                            /* Send PDU. */
+                            res = send_pdu(
+                                _pdu,
+                                length,
+                                ((flags & RX_QUEUE_FLAG_ENCRYPTED) != 0) /* If encrypted flag set, enable encryption. */
+                            );
+                            //esp_rom_printf("[txprog] sent pdu (%d)\n", res);
+                        }
+                    }
+                    break;
+
+                    case PERIPHERAL:
+                    {
+                        //if (direction == ble_BleDirection_SLAVE_TO_MASTER)
+                        if (1)
+                        {
+                            /* Send PDU. */
+                            res = send_pdu(
+                                _pdu,
+                                length,
+                                ((flags & RX_QUEUE_FLAG_ENCRYPTED) != 0) /* If encrypted flag set, enable encryption. */
+                            );
+                            //esp_rom_printf("[txprog] sent pdu (%d)\n", res);
+                        }
+                    }
+                    break;
+
+                    case IDLE:
+                    case OBSERVER:
+                    case BROADCASTER:
+                    break;
+
+                }
+            }
+            else
+            {
+                esp_rom_printf("[main::process pdus] cannot extract message from queue: %d\n", ret);
+                //break;
+            }
+        }
+    }
+}
+
 int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int length)
 {
-    char dbg[256];
-    Message pdu;
     uint8_t flags = 0;
     bool b_decrypted = false;
     uint8_t *p_payload = NULL;
     int ret;
-
-    /* Read RWBLECTNL () register. */
-    /*
-    esp_rom_printf("RWBLECNTL: 0x%08x\n", ble_read_rwblecntl());
-    esp_rom_printf("RWBLECONF: 0x%08x\n", RWBLECONF);
-    esp_rom_printf("BLE_INTCNTL: 0x%08x\n", BLE_INTCNTL);
-    esp_rom_printf("BLE_INTSTAT: 0x%08x\n", BLE_INTSTAT);
-    esp_rom_printf("BLE_INTRAWSTAT: 0x%08x\n", BLE_INTRAWSTAT);
-    esp_rom_printf("BLE_ERRORTYPESTAT: 0x%08x\n", BLE_ERRORTYPESTAT);
-    */
 
     switch (g_adapter.state)
     {
@@ -1159,35 +798,21 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 /* Check if decryption was successful */
                 if (ret == 0)
                 {
-                    esp_rom_printf("[rx ctl] decryption OK\n");
+                    esp_rom_printf(".");
+                    //esp_rom_printf("[rx ctl] decryption OK\n");
 
                     /* Decryption in-place OK, push decrypted packet. */
                     flags |= RX_QUEUE_FLAG_DECRYPTED;
 
-                    length -= 4;
-
+                    length -= 4;                    
                     set_packet_length(packet_num, length);
                 }
                 else
                 {
+                    esp_rom_printf("header: 0x%04x\n", header);
                     esp_rom_printf("[crypto] packet decryption failed\n");
                     //debug_fifos();
                     return HOOK_BLOCK;
-                }
-
-                /* Save PDU into RX queue. */
-                ret = rxqueue_append_pdu(
-                    (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-                    flags,
-                    g_adapter.conn_handle,
-                    header & 0xff,  /* LLID */
-                    length, /* length */
-                    p_pdu
-                );
-
-                if (ret != RX_QUEUE_SUCCESS)
-                {
-                    esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
                 }
             }
 
@@ -1222,7 +847,8 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                     flags |= RX_QUEUE_FLAG_DECRYPTED;
 
                 /* Save PDU into RX queue. */
-                ret = rxqueue_append_pdu(
+                ret = packet_queue_append(
+                    &g_adapter.rx_queue,
                     (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
                     flags,
                     g_adapter.conn_handle,
@@ -1231,9 +857,10 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                     p_pdu
                 );
 
+
                 if (ret != RX_QUEUE_SUCCESS)
                 {
-                    esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
+                    esp_rom_printf("[rx queue] cannot append pdu to queue: %d\n", ret);
                 }
 
                 /* Block message. */
@@ -1287,26 +914,12 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 (p_pdu[0] == 0x15)    // LENGTH_RSP
             )
             {
-                #if 0
-                /* Notify host. */
-                whad_ble_ll_data_pdu(
-                    &pdu,
-                    header,
-                    p_pdu,
-                    length,
-                    (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-                    g_adapter.conn_handle,
-                    false,
-                    b_decrypted
-                );
-                pending_pb_message(&pdu);
-                #endif
-
                 if (b_decrypted)
                     flags |= RX_QUEUE_FLAG_DECRYPTED;
 
                 /* Save PDU into RX queue. */
-                ret = rxqueue_append_pdu(
+                ret = packet_queue_append(
+                    &g_adapter.rx_queue,
                     (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
                     flags,
                     g_adapter.conn_handle,
@@ -1317,7 +930,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
 
                 if (ret != RX_QUEUE_SUCCESS)
                 {
-                    esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
+                    esp_rom_printf("[rx queue] cannot append pdu to queue: %d\n", ret);
                 }
 
 
@@ -1336,7 +949,8 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
         flags |= RX_QUEUE_FLAG_DECRYPTED;
 
     /* Save PDU into RX queue. */
-    ret = rxqueue_append_pdu(
+    ret = packet_queue_append(
+        &g_adapter.rx_queue,
         (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
         flags,
         g_adapter.conn_handle,
@@ -1349,9 +963,8 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
     {
         esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
     }
-
+    
     /* Forward by default. */
-    //esp_rom_printf("Forward pdu\n");
     return HOOK_FORWARD;
 }
 
@@ -1359,7 +972,6 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
-  Message pdu;
   uint16_t *p_l2cap_channel, *p_l2cap_pkt_size;
   bool b_valid_pkt = false;
   bool b_decrypted = false;
@@ -1376,7 +988,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
     /* If encryption is enabled, decrypt incoming PDU. */
     if (g_adapter.b_encrypted)
     {
-        dbg_txt_rom("Encrypted Data PDU received");
+        //esp_rom_printf("Encrypted Data PDU received\n");
 
         /* Decrypt PDU in place. PDU comes from master. */
         if (decrypt_pdu(header, p_pdu, length, (g_adapter.state == PERIPHERAL)) != 0)
@@ -1387,6 +999,8 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
         }
         else
         {
+            esp_rom_printf(".");
+
             /* Packet successfully decrypted. */
             b_decrypted = true;
 
@@ -1479,7 +1093,8 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
                 flags |= RX_QUEUE_FLAG_DECRYPTED;
 
             /* Save PDU into RX queue. */
-            ret = rxqueue_append_pdu(
+            ret = packet_queue_append(
+                &g_adapter.rx_queue,
                 (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
                 flags,
                 g_adapter.conn_handle,
@@ -1487,7 +1102,6 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
                 (header & 0xff00) >> 8, /* length */
                 p_pdu
             );
-
             if (ret != RX_QUEUE_SUCCESS)
             {
                 esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
@@ -1507,12 +1121,10 @@ int IRAM_ATTR ble_tx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
 {
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
-  Message pdu;
-  
   if (g_adapter.conn_state == CONNECTED)
   {
     whad_ble_ll_data_pdu(
-        &pdu,
+        &pdu_msg,
         header,
         p_pdu,
         length,
@@ -1521,7 +1133,7 @@ int IRAM_ATTR ble_tx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
         true,
         false
     );
-    pending_pb_message(&pdu); 
+    pending_pb_message(&pdu_msg); 
   }
 
   return HOOK_FORWARD;  
@@ -1553,13 +1165,13 @@ int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
   )
   {
     //dbg_txt_rom("(tx ctl) forward pdu %02x", p_llcp_pdu->opcode);
-    esp_rom_printf("esp sent ctl pdu: 0x%02x\n", p_llcp_pdu->opcode);
+    //esp_rom_printf("esp sent ctl pdu: 0x%02x\n", p_llcp_pdu->opcode);
     return HOOK_FORWARD;
   }
   else
   {
     //dbg_txt_rom("(tx ctl) block pdu %02x", p_llcp_pdu->opcode);
-    esp_rom_printf("blocked ctl pdu: 0x%02x\n", p_llcp_pdu->opcode);
+    //esp_rom_printf("blocked ctl pdu: 0x%02x\n", p_llcp_pdu->opcode);
     return HOOK_BLOCK;
   }
 }
@@ -2120,7 +1732,7 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
     struct ble_hs_conn *conn;
     uint16_t *pkt_count;
     uint8_t *p_pkt = NULL;
-    int res;
+    int res,ret;
     int length;
 
     if (
@@ -2129,6 +1741,7 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
     )
     {
 
+        #if 0
         if (send_pdu(
             send_pdu_cmd->pdu.bytes,
             send_pdu_cmd->pdu.size,
@@ -2142,6 +1755,33 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
         else
         {
             //printf("send_pdu: error\n");
+            /* Error. */
+            whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
+            send_pb_message(&cmd_result);   
+        }
+        #endif
+        portDISABLE_INTERRUPTS();
+        ret = packet_queue_append(
+            &g_adapter.tx_queue,
+            send_pdu_cmd->direction,
+            send_pdu_cmd->encrypt?RX_QUEUE_FLAG_ENCRYPTED:0,
+            send_pdu_cmd->conn_handle,
+            send_pdu_cmd->pdu.bytes[0],
+            send_pdu_cmd->pdu.size - 2,
+            &send_pdu_cmd->pdu.bytes[2]
+        );
+        portENABLE_INTERRUPTS();
+
+        //printf("[adapter] enqueue %d bytes into tx queue (%d bytes now)\n", send_pdu_cmd->pdu.size, g_adapter.tx_queue.size);
+
+        if (ret == RX_QUEUE_SUCCESS)
+        {
+            /* Success ! */
+            whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
+            send_pb_message(&cmd_result);
+        }
+        else
+        {
             /* Error. */
             whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
             send_pb_message(&cmd_result);   
@@ -2256,7 +1896,59 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
     }
 
     /* Disable encryption in BLE controller. */
-    printf("[adapter] RWBLECNTL=0x%08x\n", ble_read_rwblecntl());
+    //printf("[adapter] RWBLECNTL=0x%08x\n", ble_read_rwblecntl());
     ble_disable_crypto();
-    printf("[adapter] RWBLECNTL=0x%08x\n", ble_read_rwblecntl());
+    //printf("[adapter] RWBLECNTL=0x%08x\n", ble_read_rwblecntl());
+}
+
+int adapter_rxqueue_size(void)
+{
+    return g_adapter.rx_queue.size;
+}
+
+int adapter_rxqueue_get(
+    uint8_t *p_direction,
+    uint8_t *p_flags,
+    uint16_t *p_conn_handle,
+    uint8_t *p_llid,
+    uint8_t *p_length,
+    uint8_t *p_pdu
+)
+{
+    return packet_queue_pop(
+        &g_adapter.rx_queue,
+        p_direction,
+        p_flags,
+        p_conn_handle,
+        p_llid,
+        p_length,
+        p_pdu
+    );
+}
+
+int adapter_txqueue_size(void)
+{
+    return g_adapter.tx_queue.size;
+}
+
+int adapter_txqueue_append(
+    packet_queue_t *queue,
+    uint8_t direction,
+    uint8_t flags,
+    uint16_t conn_handle,
+    uint8_t llid,
+    uint8_t length,
+    uint8_t *p_pdu
+)
+{
+    return packet_queue_append(
+        &g_adapter.tx_queue,
+        direction,
+        flags,
+        conn_handle,
+        llid,
+        length,
+        p_pdu
+
+    );
 }
