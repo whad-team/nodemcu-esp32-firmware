@@ -44,11 +44,11 @@ void notify_pending_pdus(void)
     int ret;
 
     /* Check queue size. */
-    while (rxqueue_get_size() > 0)
+    while (adapter_rxqueue_size() > 0)
     {
         /* We still have some data to send. */
         length = 255;
-        ret = rxqueue_poke_pdu(
+        ret = adapter_rxqueue_get(
             &direction,
             &flags, 
             &conn_handle,
@@ -103,6 +103,7 @@ app_main(void)
     ble_hack_rx_data_pdu_handler(ble_rx_data_handler);
     ble_hack_tx_control_pdu_handler(ble_tx_ctl_handler);
     ble_hack_tx_data_pdu_handler(ble_tx_data_handler);
+    ble_hack_tx_prog_packets(ble_tx_prog_handler);
 
     /* Handle UART messages. */
     while (1)

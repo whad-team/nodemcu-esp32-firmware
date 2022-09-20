@@ -12,6 +12,7 @@ FBLEHACK_IsrCallback gpfn_on_rx_data_pdu = NULL;
 FBLEHACK_IsrCallback gpfn_on_rx_control_pdu = NULL;
 FBLEHACK_IsrCallback gpfn_on_tx_data_pdu = NULL;
 FBLEHACK_CtlCallback gpfn_on_tx_control_pdu = NULL;
+FBLEHACK_ProgPacketsCallback gpfn_on_tx_prog = NULL;
 
 /* Global bluetooth platform log level */
 extern int g_bt_plf_log_level;
@@ -20,6 +21,8 @@ extern int g_bt_plf_log_level;
 extern uint16_t r_em_buf_rx_free(uint32_t desc);
 
 extern void bb_wdt_int_enable(bool enable);
+extern uint32_t r_global_int_disable(void);
+extern uint32_t r_global_int_restore(void);
 
 /* Rx handler hooking (ISR). */
 uint8_t *p_rx_buffer = (uint8_t *)(BLE_RX_BUFFER_ADDR);
@@ -43,6 +46,8 @@ F_rom_llc_llcp_send pfn_rom_llc_llcp_send = (void*)(0x40043ed4);
 
 volatile bool gb_busy = false;
 volatile int g_step = 0;
+
+esp_packet_processed_t packets[8];
 
 /* TODO */
 
@@ -225,8 +230,6 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
   #ifdef BLE_HACK_DEBUG
   int i,j,k;
   #endif
-
-  esp_packet_processed_t packets[8];
   int proc_pkt_idx = 0;
 
   /**
@@ -239,7 +242,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
   if (gb_busy)
   {
     esp_rom_printf("[rx handler] already busy (%d)\n", g_step);
-    //pfn_lld_pdu_rx_handler(param_1, 1);
+    pfn_lld_pdu_rx_handler(param_1, param_2);
     return 0;
   }
 
@@ -347,7 +350,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
         g_step = 10;
         for (i=0; i<proc_pkt_idx; i++)
         {
-            //j = (fifo_index + i) % 8;
+            j = (fifo_index + i) % 8;
 
             if (!packets[i].b_forward)
             {
@@ -389,24 +392,16 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
 int _lld_pdu_tx_prog(struct lld_evt_tag *evt)
 {
   int res;
-  struct co_list_hdr *item;
-  //struct llcp_pdu_tag *node;
-  struct llcp_pdu_tag *node;
 
-  /* Parse ready to send packet descriptors. */
-  //item = (struct co_list_hdr *)evt->tx_llcp_pdu_rdy.first;
-  item = (struct co_list_hdr *)evt->tx_acl_tofree.first;
-
-  while (item != NULL)
+  /* Notify our callback. */
+  if (gpfn_on_tx_prog != NULL)
   {
-    node = (struct llcp_pdu_tag *)item;
-    //dbg_txt_rom("item: 0x%08x, llid=%02x length=%d", (uint32_t)item, node->opcode, node->pdu_length&0xff);
-    //dbg_txt_rom("item: 0x%08x", (uint32_t)item);
-    item = (struct co_list_hdr *)item->next;
+    gpfn_on_tx_prog();
   }
 
   /* Call tx prog. */
   res = pfn_lld_pdu_tx_prog(evt);
+
   return res;
 }
 
@@ -978,22 +973,20 @@ struct em_desc_node *em_buf_tx_desc_alloc(void)
  * @param length: data PDU length (without its header)
  **/
 
-void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, bool can_be_freed)
+void IRAM_ATTR send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, bool can_be_freed)
 {
   struct em_buf_node* node;
   struct em_desc_node *data_send;
   struct lld_evt_tag *env = (struct lld_evt_tag *)(*(uint32_t*)((uint32_t)llc_env[conhdl]+0x10) + 0x28);
 
-  /* Disable baseband watchdog. */
-  //bb_wdt_int_enable(0);
+  /* Disable global interrupts. */
+  //r_global_int_disable();
 
   /* Allocate data_send. */
   data_send = (struct em_desc_node *)em_buf_tx_desc_alloc();
 
   /* Allocate a buffer. */
   node = em_buf_tx_alloc();
-
-  portDISABLE_INTERRUPTS();
 
   /* Write data into allocated buf node. */
   memcpy((uint8_t *)((uint8_t *)p_rx_buffer + node->buf_ptr), p_pdu, length);
@@ -1007,9 +1000,9 @@ void send_raw_data_pdu(int conhdl, uint8_t llid, uint8_t *p_pdu, int length, boo
   /* Call lld_pdu_data_tx_push */  
   pfn_lld_pdu_data_tx_push(env, data_send, can_be_freed);
   //env->tx_prog.maxcnt--;
-  portENABLE_INTERRUPTS();
 
-  //bb_wdt_int_enable(1);
+  /* Re-enable global interrupts. */
+  //r_global_int_restore();
 }
 
 
@@ -1100,14 +1093,12 @@ void ble_hack_install_hooks(void)
   ((uint32_t *)g_ip_funcs_p)[598] = (uint32_t)_lld_pdu_data_send;
 
   /* Hook r_lld_pdu_tx_prog */
-  #if 0
   pfn_lld_pdu_tx_prog = (void *)(((uint32_t *)g_ip_funcs_p)[600]);
   #ifdef BLE_HACK_DEBUG
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_tx_prog, (uint32_t)_lld_pdu_tx_prog);
   #endif
   ((uint32_t *)g_ip_funcs_p)[600] = (uint32_t)_lld_pdu_tx_prog;
-  #endif
-
+  
   /* Hook r_lld_pdu_data_tx_push */
   pfn_lld_pdu_data_tx_push = (void *)(((uint32_t *)g_ip_funcs_p)[597]);
   #ifdef BLE_HACK_DEBUG
@@ -1182,6 +1173,16 @@ void ble_hack_tx_control_pdu_handler(FBLEHACK_CtlCallback pfn_control_callback)
 void ble_hack_tx_data_pdu_handler(FBLEHACK_IsrCallback pfn_data_callback)
 {
   gpfn_on_tx_data_pdu = pfn_data_callback;
+}
+
+/**
+ * @brief Set Tx prog callback
+ * 
+ * @param pfn_prog_callback : pointer to a callback that'll be notified when it is time to add packet into the TX queue.
+ */
+void ble_hack_tx_prog_packets(FBLEHACK_ProgPacketsCallback pfn_prog_callback)
+{
+  gpfn_on_tx_prog = pfn_prog_callback;
 }
 
 
