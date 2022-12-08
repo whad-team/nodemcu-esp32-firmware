@@ -25,7 +25,7 @@ extern uint8_t g_dev_address[6];
 
 adapter_t g_adapter;
 static DeviceCapability g_adapter_cap[] = {
-    {discovery_Domain_BtLE, discovery_Capability_SlaveRole | discovery_Capability_MasterRole | discovery_Capability_Inject | discovery_Capability_NoRawData},
+    {discovery_Domain_BtLE, discovery_Capability_SimulateRole | discovery_Capability_Inject | discovery_Capability_NoRawData},
     {0, 0}
 };
 static uint64_t g_ble_supported_commands = (
@@ -688,6 +688,7 @@ static void blecent_host_task(void *param)
 
     /* This function will return only when nimble_port_stop() is executed */
     nimble_port_run();
+    dbg_txt("nimble_port_run");
     nimble_port_freertos_deinit();
 }
 
@@ -1020,94 +1021,92 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
     **/
 
     /* Valid BLE L2CAP packet is at least 6 bytes (2-byte BLE DATA header + 4-byte L2CAP header) */
-    if (length >= 4)
+
+    //dbg_txt_rom("[l2cap] pdu size %d, l2cap size: %d, channel: %d", length, *p_l2cap_pkt_size,*p_l2cap_channel);
+
+    /* Do we have a DATA start fragment ? */
+    if ((header & 0x03) == 0x02)
     {
-        p_l2cap_channel = &p_pdu[2];
-        p_l2cap_pkt_size = &p_pdu[0];
-
-        //dbg_txt_rom("[l2cap] pdu size %d, l2cap size: %d, channel: %d", length, *p_l2cap_pkt_size,*p_l2cap_channel);
-
-        /* Do we have a DATA start fragment ? */
-        if ((header & 0x03) == 0x02)
+        //dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
+        if (!g_adapter.b_l2cap_started && (length >= 4))
         {
-            //dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
-            if (!g_adapter.b_l2cap_started)
+            p_l2cap_channel = &p_pdu[2];
+            p_l2cap_pkt_size = &p_pdu[0];
+
+            /* Make sure L2CAP header has the correct channel (attribute or SMP). */
+            if ((*p_l2cap_channel == 0x04) || (*p_l2cap_channel == 0x06))
             {
-                /* Make sure L2CAP header has the correct channel (attribute or SMP). */
-                if ((*p_l2cap_channel == 0x04) || (*p_l2cap_channel == 0x06))
+                /* L2CAP start fragment received, save expected size. */
+                g_adapter.b_l2cap_started = true;
+                g_adapter.l2cap_pkt_size = *p_l2cap_pkt_size;
+                g_adapter.l2cap_recv_bytes = length - 4; /* information payload size */
+
+                if (g_adapter.l2cap_recv_bytes == g_adapter.l2cap_pkt_size)
                 {
-                    /* L2CAP start fragment received, save expected size. */
-                    g_adapter.b_l2cap_started = true;
-                    g_adapter.l2cap_pkt_size = *p_l2cap_pkt_size;
-                    g_adapter.l2cap_recv_bytes = length - 4; /* information payload size */
-
-                    if (g_adapter.l2cap_recv_bytes == g_adapter.l2cap_pkt_size)
-                    {
-                        /* Packet is complete. */
-                        g_adapter.b_l2cap_started = false;
-                        //dbg_txt_rom("[l2cap] received complete fragment");
-                    }
-                    else
-                    {
-                        //dbg_txt_rom("[l2cap] received start fragment");
-                    }
-                }
-
-                /* Packet is valid. */
-                b_valid_pkt = true;
-            }
-        }
-        /* Do we have a DATA continue fragment ? */
-        else if ((header & 0x03) == 0x01)
-        {
-            //dbg_txt_rom("[l2cap] continue fragment received (state=%d)", g_adapter.b_l2cap_started);
-            /* Only accept this fragment after a start fragment has been received. */
-            if (g_adapter.b_l2cap_started)
-            {
-                //dbg_txt_rom("[l2cap] received continue fragment");
-
-                /* Do we have received a complete L2CAP packet ? */
-                g_adapter.l2cap_recv_bytes += (length - 4); /* information payload size. */
-                if (g_adapter.l2cap_recv_bytes >= g_adapter.l2cap_pkt_size)
-                {
-                    //dbg_txt_rom("[l2cap] packet is complete");
-
-                    /* Yes, next packet shall be a start fragment. */
+                    /* Packet is complete. */
                     g_adapter.b_l2cap_started = false;
-                    g_adapter.l2cap_pkt_size = 0;
-                    g_adapter.l2cap_recv_bytes = 0;
+                    //dbg_txt_rom("[l2cap] received complete fragment");
                 }
                 else
                 {
-                    //dbg_txt_rom("[l2cap] packet continuation %d/%d", g_adapter.l2cap_recv_bytes, g_adapter.l2cap_pkt_size);
+                    //dbg_txt_rom("[l2cap] received start fragment");
                 }
-
-                /* Packet is valid. */
-                b_valid_pkt = true;
             }
-        }
 
-        if (b_valid_pkt)
+            /* Packet is valid. */
+            b_valid_pkt = true;
+        }
+    }
+    /* Do we have a DATA continue fragment ? */
+    else if ((header & 0x03) == 0x01)
+    {
+        //dbg_txt_rom("[l2cap] continue fragment received (state=%d)", g_adapter.b_l2cap_started);
+        /* Only accept this fragment after a start fragment has been received. */
+        if (g_adapter.b_l2cap_started)
         {
-            if (b_decrypted)
-                flags |= RX_QUEUE_FLAG_DECRYPTED;
+            //dbg_txt_rom("[l2cap] received continue fragment");
 
-            /* Save PDU into RX queue. */
-            ret = packet_queue_append(
-                &g_adapter.rx_queue,
-                (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
-                flags,
-                g_adapter.conn_handle,
-                header & 0xff,  /* LLID */
-                (header & 0xff00) >> 8, /* length */
-                p_pdu
-            );
-            if (ret != RX_QUEUE_SUCCESS)
+            /* Do we have received a complete L2CAP packet ? */
+            g_adapter.l2cap_recv_bytes += length; /* information payload size. */
+            if (g_adapter.l2cap_recv_bytes >= g_adapter.l2cap_pkt_size)
             {
-                esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
+                //dbg_txt_rom("[l2cap] packet is complete");
+
+                /* Yes, next packet shall be a start fragment. */
+                g_adapter.b_l2cap_started = false;
+                g_adapter.l2cap_pkt_size = 0;
+                g_adapter.l2cap_recv_bytes = 0;
+            }
+            else
+            {
+                //dbg_txt_rom("[l2cap] packet continuation %d/%d", g_adapter.l2cap_recv_bytes, g_adapter.l2cap_pkt_size);
             }
 
+            /* Packet is valid. */
+            b_valid_pkt = true;
         }
+    }
+
+    if (b_valid_pkt)
+    {
+        if (b_decrypted)
+            flags |= RX_QUEUE_FLAG_DECRYPTED;
+
+        /* Save PDU into RX queue. */
+        ret = packet_queue_append(
+            &g_adapter.rx_queue,
+            (g_adapter.state == CENTRAL)?ble_BleDirection_SLAVE_TO_MASTER:ble_BleDirection_MASTER_TO_SLAVE,
+            flags,
+            g_adapter.conn_handle,
+            header & 0xff,  /* LLID */
+            (header & 0xff00) >> 8, /* length */
+            p_pdu
+        );
+        if (ret != RX_QUEUE_SUCCESS)
+        {
+            esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
+        }
+
     }
     return HOOK_BLOCK;
   }
