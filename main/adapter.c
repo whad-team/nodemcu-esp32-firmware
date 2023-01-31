@@ -589,7 +589,10 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
             if (g_adapter.b_enabled)
             {
                 /* Resume scanning. */
-                blecent_scan();
+                //blecent_scan();
+
+                /* Stop central on disconnection. */
+                g_adapter.b_enabled = false;
             }
         }
         else if (g_adapter.state == PERIPHERAL)
@@ -840,8 +843,8 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 //(p_pdu[0] == 0x0F) || // LL_CONNECTION_UPDATE_REQ
                 (p_pdu[0] == 0x12) || // LL_PING_REQ
                 (p_pdu[0] == 0x13) || // LL_PING_RSP
-                (p_pdu[0] == 0x14) || // LENGTH_REQ
-                (p_pdu[0] == 0x15)    // LENGTH_RSP
+                //(p_pdu[0] == 0x14) || // LENGTH_REQ
+                //(p_pdu[0] == 0x15)    // LENGTH_RSP
             )
             {
                 if (b_decrypted)
@@ -1254,7 +1257,10 @@ void adapter_quit_state(adapter_state_t state)
                         true
                     );
                     */
-                   send_terminate_ind();
+
+                    /* Terminate connection if active. */
+                    if (g_adapter.conn_state == CONNECTED)
+                        send_terminate_ind();
                 }
 
                 /* Wait for the BLE stack to be disconnected. */
@@ -1530,6 +1536,9 @@ void adapter_on_enable_central(ble_CentralModeCmd *central_mode)
     if (adapter_set_state(CENTRAL))
     {
         dbg_txt("central mode set");
+
+        /* Central is disabled by default. */
+        g_adapter.b_enabled = false;
 
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
         send_pb_message(&cmd_result);
