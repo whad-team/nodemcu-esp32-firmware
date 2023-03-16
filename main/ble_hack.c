@@ -323,7 +323,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
                 {
                     if (gpfn_on_rx_data_pdu != NULL)
                     {
-                        //esp_rom_printf("call rx data handler\n");
+                        //esp_rom_printf("call rx data handler (%d)\n", pkt_size);
                         forward = gpfn_on_rx_data_pdu(
                             j,
                             (uint16_t)(pkt_header & 0xffff),
@@ -337,6 +337,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
                 }
             }
             g_step++;
+
             /* Increment rx pkt index. */
             proc_pkt_idx++;
         }
@@ -368,7 +369,7 @@ int _lld_pdu_rx_handler(int param_1,int param_2)
                     /* Copy RAM into PDU. */
                     p_offset = (uint16_t *)(BLE_RX_DESC_ADDR + 12*j);
                     p_pdu = (uint8_t *)(p_rx_buffer + *p_offset);
-                    memcpy(p_pdu, packets[i].pdu, packets[i].length);             
+                    memcpy(p_pdu, packets[i].pdu, packets[i].length);            
                 }
             }
         }
@@ -419,12 +420,13 @@ int _lld_pdu_data_tx_push(struct lld_evt_tag *evt, struct em_desc_node *txnode, 
   char dbghex[1024];
   uint8_t *p_buf = (uint8_t *)(p_rx_buffer + txnode->buffer_ptr);
 
+  /*
   dbg_txt_rom("evt: 0x%08x", evt);
   dbg_txt_rom("txnode->llid=0x%02x, txnode->length=%d, txnode->buf_idx=%d, txnode->buf_ptr=0x%08x",
   txnode->llid,
   txnode->length,
   txnode->buffer_idx,
-  txnode->buffer_ptr);
+  txnode->buffer_ptr); */
 
 #if 0  
   /* This is for ESP32_WROOM32 only */
@@ -1074,7 +1076,7 @@ void ble_hack_install_hooks(void)
   printf("Hooking function %08x with %08x\n", (uint32_t)pfn_lld_pdu_rx_handler, (uint32_t)_lld_pdu_rx_handler);
   #endif
   r_btdm_option_data[615] = (uint32_t *)_lld_pdu_rx_handler;
-  //g_bt_plf_log_level=3;
+  g_bt_plf_log_level=2;
   
   #if 0
   /* Hook r_lld_pdu_rx_handler() */

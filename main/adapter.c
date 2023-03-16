@@ -237,8 +237,6 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
 
     if (status != 0) {
         /* Service discovery failed.  Terminate the connection. */
-        MODLOG_DFLT(ERROR, "Error: Service discovery failed; status=%d "
-                    "conn_handle=%d\n", status, peer->conn_handle);
         ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         return;
     }
@@ -247,13 +245,6 @@ blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
      * list of services, characteristics, and descriptors that the peer
      * supports.
      */
-    MODLOG_DFLT(ERROR, "Service discovery complete; status=%d "
-                "conn_handle=%d\n", status, peer->conn_handle);
-
-    /* Now perform three GATT procedures against the peer: read,
-     * write, and subscribe to notifications.
-     */
-    //blecent_read_write_subscribe(peer);
 }
 
 /**
@@ -407,8 +398,6 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
     struct ble_gap_conn_desc desc;
     struct ble_hs_adv_fields fields;
     int rc;
-
-    printf("GAP event: %d\n", event->type);
 
     switch (event->type) {
     case BLE_GAP_EVENT_DISC:
@@ -570,11 +559,8 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
-        dbg_txt("[nimble] disconnected\r\n");
         /* Connection terminated. */
-        MODLOG_DFLT(INFO, "disconnect; reason=%d ", event->disconnect.reason);
-        print_conn_desc(&event->disconnect.conn);
-        MODLOG_DFLT(INFO, "\n");
+        dbg_txt("[nimble] disconnected\r\n");
 
         /* Forget about peer. */
         peer_delete(event->disconnect.conn.conn_handle);
@@ -691,7 +677,7 @@ static void blecent_host_task(void *param)
 
     /* This function will return only when nimble_port_stop() is executed */
     nimble_port_run();
-    dbg_txt("nimble_port_run");
+    //dbg_txt("nimble_port_run");
     nimble_port_freertos_deinit();
 }
 
@@ -770,7 +756,7 @@ void IRAM_ATTR ble_tx_prog_handler(void)
             }
             else
             {
-                esp_rom_printf("[main::process pdus] cannot extract message from queue: %d\n", ret);
+                //esp_rom_printf("[main::process pdus] cannot extract message from queue: %d\n", ret);
                 //break;
             }
         }
@@ -842,7 +828,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 (p_pdu[0] == 0x0D) || // LL_REJECT_IND
                 //(p_pdu[0] == 0x0F) || // LL_CONNECTION_UPDATE_REQ
                 (p_pdu[0] == 0x12) || // LL_PING_REQ
-                (p_pdu[0] == 0x13) || // LL_PING_RSP
+                (p_pdu[0] == 0x13) //|| // LL_PING_RSP
                 //(p_pdu[0] == 0x14) || // LENGTH_REQ
                 //(p_pdu[0] == 0x15)    // LENGTH_RSP
             )
@@ -861,11 +847,11 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                     p_pdu
                 );
 
-
+                /*
                 if (ret != RX_QUEUE_SUCCESS)
                 {
                     esp_rom_printf("[rx queue] cannot append pdu to queue: %d\n", ret);
-                }
+                }*/
 
                 /* Block message. */
                 return HOOK_BLOCK;
@@ -913,9 +899,9 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                 (p_pdu[0] == 0x0C) || // LL_VERSION_IND
                 (p_pdu[0] == 0x0D) || // LL_REJECT_IND
                 (p_pdu[0] == 0x12) || // LL_PING_REQ
-                (p_pdu[0] == 0x13) || // LL_PING_RSP
-                (p_pdu[0] == 0x14) || // LENGTH_REQ
-                (p_pdu[0] == 0x15)    // LENGTH_RSP
+                (p_pdu[0] == 0x13) //|| // LL_PING_RSP
+                //(p_pdu[0] == 0x14) || // LENGTH_REQ
+                //(p_pdu[0] == 0x15)    // LENGTH_RSP
             )
             {
                 if (b_decrypted)
@@ -932,10 +918,11 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                     p_pdu
                 );
 
+                /*
                 if (ret != RX_QUEUE_SUCCESS)
                 {
                     esp_rom_printf("[rx queue] cannot append pdu to queue: %d\n", ret);
-                }
+                }*/
 
 
                 /* Block message. */
@@ -1107,7 +1094,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
         );
         if (ret != RX_QUEUE_SUCCESS)
         {
-            esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
+            //esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
         }
 
     }
