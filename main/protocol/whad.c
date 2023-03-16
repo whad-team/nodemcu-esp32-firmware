@@ -109,7 +109,7 @@ void whad_discovery_device_info_resp(
     message->which_msg = Message_discovery_tag;
     message->msg.discovery.which_msg = discovery_Message_info_resp_tag;
     message->msg.discovery.msg.info_resp.proto_min_ver = proto_min_ver;
-    message->msg.discovery.msg.info_resp.max_speed = BAUDRATE_MAX;
+    message->msg.discovery.msg.info_resp.max_speed = max_speed;
     if (fw_author != NULL)
     {
         strncpy((char *)message->msg.discovery.msg.info_resp.fw_author.bytes, (char *)fw_author, 63);
