@@ -185,7 +185,27 @@ uint16_t make_cmd_ble_create_connection(uint8_t *buf, uint16_t scan_interval, ui
                                 uint16_t max_latency, uint16_t supervision_timeout,
                                 uint16_t min_ce_length, uint16_t max_ce_length);
 
+
+/**
+ * @brief This function is used to set the random address of the BLE adapter.
+ * 
+ * @param buf                   Input buffer to write into
+ * @param p_address             Bluetooth Device address
+ *
+ * @return Size of buf after writing into it
+ */
 uint16_t make_cmd_ble_set_random_address(uint8_t *buf, uint8_t *p_address);
+
+
+/**
+ * @brief This function sets the LE controller scan response data.
+ * 
+ * @param buf                   Input buffer to write into
+ * @param data_len              Length of scan response data (<= 31)
+ * @param p_data                Pointer to the scan response data to use
+ * 
+ * @return Size of buf after writing into it
+ */
 uint16_t make_cmd_ble_set_scan_resp_data(uint8_t *buf, uint8_t data_len, uint8_t *p_data);
 
 #endif /* __INC_HCI_H */

@@ -84,12 +84,6 @@ typedef struct {
 
 void adapter_init(void);
 
-/* BLE callbacks. */
-static void blecent_host_task(void *param);
-static void blecent_on_reset(int reason);
-static void blecent_on_sync(void);
-void ble_advertise(void);
-
 /* BLE hooks. */
 int ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu, int length);
 int ble_rx_data_handler(int packet_num, uint16_t header,uint8_t *p_pdu, int length);
@@ -108,7 +102,7 @@ void adapter_on_enable_scan(ble_ScanModeCmd *scan_mode);
 void adapter_on_enable_central(ble_CentralModeCmd *central_mode);
 void adapter_on_connect(ble_ConnectToCmd *connect);
 void adapter_on_start(ble_StartCmd *start);
-void adapter_on_stop(ble_StartCmd *stop);
+void adapter_on_stop(ble_StopCmd *stop);
 void adapter_on_disconnect(ble_DisconnectCmd *disconnect);
 void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu);
 void adapter_on_sniff_adv(ble_SniffAdvCmd *sniff_adv);

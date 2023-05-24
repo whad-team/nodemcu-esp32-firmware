@@ -6,15 +6,9 @@
 #include "esp_bt.h"
 #include "esp_log.h"
 #include "hci.h"
-// #include "bt_hci_common.h"
 
-// #include "console/console.h"
-
-static const char *tag = "whd_ble";
-static uint8_t peer_addr[6];
 static uint8_t null_bd_addr[6] = {0};
 
-extern struct ble_hs_conn;
 extern int r_lld_util_set_bd_address(uint8_t *p_bd_addr, uint32_t addr_type);
 extern uint8_t g_dev_address[6];
 
@@ -33,7 +27,6 @@ static uint64_t g_ble_supported_commands = ((1 << ble_BleCommand_AdvMode) |
                                             (1 << ble_BleCommand_Stop) |
                                             (1 << ble_BleCommand_SetBdAddress));
 
-static uint8_t peer_addr[6];
 char dbg[256];
 uint8_t _pdu[256];
 Message pdu_msg;
@@ -44,6 +37,13 @@ static uint8_t hci_cmd_buf[128];
  * vHCI helpers
  *
  *****************************************************************************/
+
+/**
+ * @brief Send synchronously an HCI command.
+ * 
+ * @param hci_command   HCI command buffer to send
+ * @param size          Size of the HCI command buffer
+ */
 
 void send_hci_command_sync(uint8_t *hci_command, uint16_t size)
 {
@@ -57,11 +57,21 @@ void send_hci_command_sync(uint8_t *hci_command, uint16_t size)
     esp_vhci_host_send_packet(hci_command, size);
 }
 
+
+/**
+ * @brief Send an HCI Reset command to the BLE controller.
+ */
+
 static void hci_cmd_send_reset(void)
 {
     uint16_t sz = make_cmd_reset(hci_cmd_buf);
     send_hci_command_sync(hci_cmd_buf, sz);
 }
+
+
+/**
+ * @brief Set the controller event mask to track disconnection and LE Meta events.
+ */
 
 static void hci_cmd_send_set_evt_mask(void)
 {
@@ -70,6 +80,11 @@ static void hci_cmd_send_set_evt_mask(void)
     uint16_t sz = make_cmd_set_evt_mask(hci_cmd_buf, evt_mask);
     send_hci_command_sync(hci_cmd_buf, sz);
 }
+
+
+/**
+ * @brief Set the LE controller scan parameters
+ */
 
 static void hci_cmd_send_ble_scan_params(void)
 {
@@ -86,6 +101,13 @@ static void hci_cmd_send_ble_scan_params(void)
     send_hci_command_sync(hci_cmd_buf, sz);
 }
 
+
+/**
+ * @brief Enable or disable LE device scanning.
+ * 
+ * @param enabled   True to enable scanning, False to disable.
+ */
+
 static void hci_cmd_send_ble_scan_start(bool enabled)
 {
     uint8_t scan_enable = (enabled?1:0);       /* Scanning enabled. */
@@ -93,6 +115,11 @@ static void hci_cmd_send_ble_scan_start(bool enabled)
     uint16_t sz = make_cmd_ble_set_scan_enable(hci_cmd_buf, scan_enable, filter_duplicates);
     send_hci_command_sync(hci_cmd_buf, sz);
 }
+
+
+/**
+ * @brief Create a LE connection to a target device.
+ */
 
 static void hci_cmd_send_ble_create_connection()
 {
@@ -127,6 +154,10 @@ static void hci_cmd_send_ble_create_connection()
 }
 
 
+/**
+ * @brief Set LE advertising parameters.
+ */
+
 void hci_send_set_adv_params(void)
 {
     /* Set advertising parameters. */
@@ -144,6 +175,14 @@ void hci_send_set_adv_params(void)
     send_hci_command_sync(hci_cmd_buf, sz);   
 }
 
+
+/**
+ * @brief Set LE advertising data (used in advertising PDU)
+ * 
+ * @param p_adv_data    Pointer to the advertising data to use
+ * @param length        Length of advertising data
+ */
+
 void hci_send_set_adv_data(uint8_t *p_adv_data, uint8_t length)
 {
     uint16_t sz = make_cmd_ble_set_adv_data(hci_cmd_buf, length, p_adv_data);
@@ -151,11 +190,25 @@ void hci_send_set_adv_data(uint8_t *p_adv_data, uint8_t length)
 }
 
 
+/**
+ * @brief Set LE scan response data (used in scan response PDU)
+ * 
+ * @param p_scan_resp_data  Pointer to the scan response data to use
+ * @param length            Length of scan response data
+ */
+
 void hci_send_set_scan_resp_data(uint8_t *p_scan_resp_data, uint8_t length)
 {
     uint16_t sz = make_cmd_ble_set_scan_resp_data(hci_cmd_buf, length, p_scan_resp_data);
     send_hci_command_sync(hci_cmd_buf, sz);
 }
+
+
+/**
+ * @brief Enable/disable LE advertising
+ * 
+ * @param enable    True to enable advertising, False to disable.
+ */
 
 void hci_send_set_adv_enable(bool enable)
 {
@@ -180,6 +233,7 @@ static void controller_rcv_pkt_ready(void)
  * @brief: BT controller callback function to transfer data packet to
  *         the host
  */
+
 static int host_rcv_pkt(uint8_t *data, uint16_t len)
 {
     char dbg[128];
@@ -394,11 +448,18 @@ static esp_vhci_host_callback_t vhci_host_cb = {
     controller_rcv_pkt_ready,
     host_rcv_pkt};
 
+
 /****************************************************************************
  *
  * BLE related functions
  *
  ****************************************************************************/
+
+/**
+ * @brief Enable/disable BLE scanning
+ * 
+ * @param enable    true to enable scanning, false to disable
+ */
 
 void ble_scan(bool enable)
 {
@@ -412,24 +473,35 @@ void ble_scan(bool enable)
     hci_cmd_send_ble_scan_start(enable);
 }
 
+
+/**
+ * @brief Set LE random BD address
+ * 
+ * @param address   Pointer to a BD address buffer.
+ */
+
 void ble_set_rand_addr(uint8_t *address)
 {
     uint16_t sz = make_cmd_ble_set_random_address(hci_cmd_buf, address);
     send_hci_command_sync(hci_cmd_buf, sz);
 }
 
+
+/**
+ * @brief Initiate a LE connection to the target device specified in `g_adapter`.
+ */
+
 void ble_connect(void)
 {
     hci_cmd_send_ble_create_connection();
 }
 
+
 bool IRAM_ATTR send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
 {
     bool b_sent = false;
     uint8_t *p_pkt = NULL;
-    uint16_t *pkt_count;
-    struct ble_hs_conn *conn;
-    int res, i;
+    int res;
 
     /* Handle encryption. */
     if (b_encrypt)
@@ -499,11 +571,17 @@ bool IRAM_ATTR send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
     return b_sent;
 }
 
+
+/**
+ * @brief Send a LL_TERMINATE_IND PDU to the remote device.
+ */
+
 void send_terminate_ind(void)
 {
     /* Send LL_TERMINATE_IND. */
     send_pdu((uint8_t *)"\x03\x02\x02\x13", 4, g_adapter.b_encrypted);
 }
+
 
 /******************************************************************************
  ******************************************************************************
@@ -517,7 +595,6 @@ void adapter_init(void)
 {
     uint8_t mac_addr[6];
     Message msg;
-    int rc;
 
     /* Generate device name based on MAC */
     esp_read_mac(mac_addr, ESP_MAC_BT);
@@ -594,7 +671,7 @@ void adapter_init(void)
     g_adapter.adv_rsp_data_length = 0;
 
     /* Initialize BD address spoofing. */
-    memset(g_adapter.my_dev_addr, mac_addr, 6);
+    memcpy(g_adapter.my_dev_addr, mac_addr, 6);
     g_adapter.my_addr_type = 1; /* random */
     g_adapter.b_spoof_addr = false;
 
@@ -615,467 +692,12 @@ void adapter_init(void)
     send_pb_message(&msg);
 }
 
-#if 0
-/**
- * Called when service discovery of the specified peer has completed.
- */
-static void
-blecent_on_disc_complete(const struct peer *peer, int status, void *arg)
-{
-
-    if (status != 0) {
-        /* Service discovery failed.  Terminate the connection. */
-        ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-        return;
-    }
-
-    /* Service discovery has completed successfully.  Now we have a complete
-     * list of services, characteristics, and descriptors that the peer
-     * supports.
-     */
-}
-
-/**
- * Initiates the GAP general discovery procedure.
- */
-static void
-blecent_scan(void)
-{
-    struct ble_gap_disc_params disc_params;
-    int rc;
-
-    /* Figure out address to use while advertising (no privacy for now) */
-    rc = ble_hs_id_infer_auto(0, &g_adapter.my_addr_type);
-    if (rc != 0) {
-        dbg_txt("error determining address type; rc=%d\n", rc);
-        return;
-    }
-
-    /* Tell the controller to filter duplicates; we don't want to process
-     * repeated advertisements from the same device.
-     */
-    //disc_params.filter_duplicates = 1;
-
-    /**
-     * Perform a passive scan.  I.e., don't send follow-up scan requests to
-     * each advertiser.
-     */
-    disc_params.passive = (!g_adapter.active_scan);
-
-    /* Use defaults for the rest of the parameters. */
-    disc_params.itvl = 0;
-    disc_params.window = 0;
-    disc_params.filter_policy = 0;
-    disc_params.limited = 0;
-
-    rc = ble_gap_disc(g_adapter.my_addr_type, BLE_HS_FOREVER, &disc_params,
-                      blecent_gap_event, NULL);
-    if (rc != 0) {
-        dbg_txt("Error initiating GAP discovery procedure; rc=%d\n",
-                    rc);
-    }
-
-    dbg_txt("GAP discovery initiated (mode: %d).", g_adapter.state);
-}
-
-/**
- * Indicates whether we should try to connect to the sender of the specified
- * advertisement.  The function returns a positive result if the device
- * advertises connectability and support for the Alert Notification service.
- */
-static int
-blecent_should_connect(const struct ble_gap_disc_desc *disc)
-{
-    struct ble_hs_adv_fields fields;
-    int rc;
-    int i;
-
-    /* The device has to be advertising connectability. */
-    if (disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND &&
-            disc->event_type != BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
-
-        return 0;
-    }
-
-    rc = ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data);
-    if (rc != 0) {
-        return rc;
-    }
-
-    /* Make sure target address and address type match. */
-    if (
-        (memcmp(g_adapter.target_dev_addr, disc->addr.val, sizeof(disc->addr.val)) != 0) ||
-        (g_adapter.target_dev_addr_type != (disc->addr.type & 0x01))
-    ) {
-        return 0;
-    }
-
-    return 1;
-}
-
-/**
- * Connects to the sender of the specified advertisement of it looks
- * interesting.  A device is "interesting" if it advertises connectability and
- * support for the Alert Notification service.
- */
-static void
-blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
-{
-    int rc;
-
-    /* Don't do anything if we don't care about this advertiser. */
-    if (!blecent_should_connect(disc)) {
-        return;
-    }
-
-    /* Scanning must be stopped before a connection can be initiated. */
-    rc = ble_gap_disc_cancel();
-    if (rc != 0) {
-        MODLOG_DFLT(DEBUG, "Failed to cancel scan; rc=%d\n", rc);
-        return;
-    }
-
-    /* Figure out address to use for connect (no privacy for now) */
-    rc = ble_hs_id_infer_auto(0, &g_adapter.my_addr_type);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
-        return;
-    }
-    
-
-    /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
-     * timeout.
-     */
-
-    rc = ble_gap_connect(g_adapter.my_addr_type, &disc->addr, 30000, NULL,
-                         blecent_gap_event, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Error: Failed to connect to device; addr_type=%d "
-                    "addr=%s; rc=%d\n",
-                    disc->addr.type, addr_str(disc->addr.val), rc);
-        return;
-    }
-
-    /*
-     * Update BD address right after having initiated a GAP connection.
-     */
-
-    if (g_adapter.b_spoof_addr)
-    {
-        r_lld_util_set_bd_address(g_adapter.my_dev_addr, 0);
-    }
-}
-
-/**
- * The nimble host executes this callback when a GAP event occurs.  The
- * application associates a GAP event callback with each connection that is
- * established.  blecent uses the same callback for all connections.
- *
- * @param event                 The event being signalled.
- * @param arg                   Application-specified argument; unused by
- *                                  blecent.
- *
- * @return                      0 if the application successfully handled the
- *                                  event; nonzero on failure.  The semantics
- *                                  of the return code is specific to the
- *                                  particular GAP event being signalled.
- */
-static int
-blecent_gap_event(struct ble_gap_event *event, void *arg)
-{
-    struct ble_gap_conn_desc desc;
-    struct ble_hs_adv_fields fields;
-    int rc;
-
-    switch (event->type) {
-    case BLE_GAP_EVENT_DISC:
-        rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
-                                     event->disc.length_data);
-        if (rc != 0) {
-            return 0;
-        }
-        
-        switch (event->disc.event_type)
-        {
-            case BLE_HCI_ADV_RPT_EVTYPE_DIR_IND:
-            {
-                if (g_adapter.state == OBSERVER)
-                {
-                    /* An advertisment report was received during GAP discovery. */
-                    adapter_on_notify_adv(
-                        ble_BleAdvType_ADV_DIRECT_IND,
-                        event->disc.rssi,
-                        event->disc.addr.type & 0x01,
-                        event->disc.addr.val,
-                        event->disc.data,
-                        event->disc.length_data
-                    );
-                }
-            }
-            break;
-
-            case BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND:
-            {
-                if (g_adapter.state == OBSERVER)
-                {
-                    /* An advertisment report was received during GAP discovery. */
-                    adapter_on_notify_adv(
-                        ble_BleAdvType_ADV_NONCONN_IND,
-                        event->disc.rssi,
-                        event->disc.addr.type & 0x01,
-                        event->disc.addr.val,
-                        event->disc.data,
-                        event->disc.length_data
-                    );
-                }
-            }
-            break;
-
-            case BLE_HCI_ADV_RPT_EVTYPE_ADV_IND:
-            {
-                if (g_adapter.state == OBSERVER)
-                {
-                    /* An advertisment report was received during GAP discovery. */
-                    adapter_on_notify_adv(
-                        ble_BleAdvType_ADV_IND,
-                        event->disc.rssi,
-                        event->disc.addr.type & 0x01,
-                        event->disc.addr.val,
-                        event->disc.data,
-                        event->disc.length_data
-                    );
-                }
-                else if (g_adapter.state == CENTRAL)
-                {
-                    //dbg_txt("ADV PDU received");
-
-                    /* Try to connect to the advertiser if it looks interesting. */
-                    blecent_connect_if_interesting(&event->disc);
-                }
-
-            }
-            break;
-
-            case BLE_HCI_ADV_RPT_EVTYPE_SCAN_IND:
-            {
-                if (g_adapter.state == OBSERVER)
-                {
-                    /* An advertisment report was received during GAP discovery. */
-                    adapter_on_notify_adv(
-                        ble_BleAdvType_ADV_SCAN_IND,
-                        event->disc.rssi,
-                        event->disc.addr.type & 0x01,
-                        event->disc.addr.val,
-                        event->disc.data,
-                        event->disc.length_data
-                    );
-                }
-            }
-            break;
-
-            case BLE_HCI_ADV_RPT_EVTYPE_SCAN_RSP:
-            {
-                if (g_adapter.state == OBSERVER)
-                {
-                    /* An advertisment report was received during GAP discovery. */
-                    adapter_on_notify_adv(
-                        ble_BleAdvType_ADV_SCAN_RSP,
-                        event->disc.rssi,
-                        event->disc.addr.type & 0x01,
-                        event->disc.addr.val,
-                        event->disc.data,
-                        event->disc.length_data
-                    );
-                }
-            }
-            break;
-
-            default:
-            break;
-        }
-        return 0;
-
-    case BLE_GAP_EVENT_CONNECT:
-        /* Connection is only allowed when in peripheral or central mode. */
-        if ((g_adapter.state == PERIPHERAL) || (g_adapter.state == CENTRAL) )
-        {
-            /* A new connection was established or a connection attempt failed. */
-            if (event->connect.status == 0) {
-                dbg_txt("[nimble] connection established\r\n");
-                
-                g_adapter.conn_handle = event->connect.conn_handle;
-                g_adapter.conn_state = CONNECTED;
-
-                rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-                assert(rc == 0);
-                
-                /* In Peripheral mode, WE are advertising. */
-                if (g_adapter.state == PERIPHERAL)
-                {
-                    /* Notify peer connection. */
-                    adapter_on_notify_connected(
-                        desc.our_ota_addr.type & 0x01,
-                        desc.our_ota_addr.val,
-                        desc.peer_ota_addr.type & 0x01,
-                        desc.peer_ota_addr.val
-                    );
-                }
-                else
-                {
-                    /* Notify peer connection. */
-                    adapter_on_notify_connected(
-                        desc.peer_ota_addr.type & 0x01,
-                        desc.peer_ota_addr.val,
-                        desc.our_ota_addr.type & 0x01,
-                        desc.our_ota_addr.val
-                    );
-                }
-
-                /* Remember peer. */
-                rc = peer_add(event->connect.conn_handle);
-                if (rc != 0) {
-                    MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
-                    return 0;
-                }
-            } else {
-                /* Connection attempt failed; resume scanning. */
-                MODLOG_DFLT(ERROR, "Error: Connection failed; status=%d\n",
-                            event->connect.status);
-                blecent_scan();
-            }
-        }
-        return 0;
-
-    case BLE_GAP_EVENT_DISCONNECT:
-        /* Connection terminated. */
-        dbg_txt("[nimble] disconnected\r\n");
-
-        /* Forget about peer. */
-        peer_delete(event->disconnect.conn.conn_handle);
-
-        adapter_on_notify_disconnected();
-        g_adapter.conn_handle = -1;
-        g_adapter.conn_state = DISCONNECTED;
-        g_adapter.b_encrypted = false; /* Do not encrypt anymore. */
-
-        if (g_adapter.state == CENTRAL)
-        {
-            if (g_adapter.b_enabled)
-            {
-                /* Resume scanning. */
-                //blecent_scan();
-
-                /* Stop central on disconnection. */
-                g_adapter.b_enabled = false;
-            }
-        }
-        else if (g_adapter.state == PERIPHERAL)
-        {
-            ble_advertise();
-        }
-        return 0;
-
-    case BLE_GAP_EVENT_DISC_COMPLETE:
-        dbg_txt("discovery complete; reason=%d\n",
-                    event->disc_complete.reason);
-        return 0;
-
-    case BLE_GAP_EVENT_ENC_CHANGE:
-        /* Encryption has been enabled or disabled for this connection. */
-        MODLOG_DFLT(INFO, "encryption change event; status=%d ",
-                    event->enc_change.status);
-        rc = ble_gap_conn_find(event->enc_change.conn_handle, &desc);
-        assert(rc == 0);
-        print_conn_desc(&desc);
-        return 0;
-
-    case BLE_GAP_EVENT_NOTIFY_RX:
-        /* Peer sent us a notification or indication. */
-        MODLOG_DFLT(INFO, "received %s; conn_handle=%d attr_handle=%d "
-                    "attr_len=%d\n",
-                    event->notify_rx.indication ?
-                    "indication" :
-                    "notification",
-                    event->notify_rx.conn_handle,
-                    event->notify_rx.attr_handle,
-                    OS_MBUF_PKTLEN(event->notify_rx.om));
-
-        /* Attribute data is contained in event->notify_rx.om. Use
-         * `os_mbuf_copydata` to copy the data received in notification mbuf */
-        return 0;
-
-    case BLE_GAP_EVENT_MTU:
-        MODLOG_DFLT(INFO, "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
-                    event->mtu.conn_handle,
-                    event->mtu.channel_id,
-                    event->mtu.value);
-        return 0;
-
-    case BLE_GAP_EVENT_REPEAT_PAIRING:
-        /* We already have a bond with the peer, but it is attempting to
-         * establish a new secure link.  This app sacrifices security for
-         * convenience: just throw away the old bond and accept the new link.
-         */
-
-        /* Delete the old bond. */
-        rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
-        assert(rc == 0);
-        ble_store_util_delete_peer(&desc.peer_id_addr);
-
-        /* Return BLE_GAP_REPEAT_PAIRING_RETRY to indicate that the host should
-         * continue with the pairing operation.
-         */
-        return BLE_GAP_REPEAT_PAIRING_RETRY;
-
-    case BLE_GAP_EVENT_ADV_COMPLETE:
-        if ( (g_adapter.state == PERIPHERAL) || (g_adapter.state == BROADCASTER) )
-        {
-            /* Restart advertising. */
-            ble_advertise();
-        }
-        return 0;
-
-    default:
-        return 0;
-    }
-}
-
-static void blecent_on_reset(int reason)
-{
-    dbg_txt("Resetting state; reason=%d\n", reason);
-}
-
-static void blecent_on_sync(void)
-{
-    int rc;
-
-    dbg_txt("blecent_on_sync");
-
-    /* Make sure we have proper identity address set (public preferred) */
-    rc = ble_hs_util_ensure_addr(0);
-    assert(rc == 0);
-
-    /* Begin scanning for a peripheral to connect to. */
-    //blecent_scan();
-}
-
-static void blecent_host_task(void *param)
-{   
-    dbg_txt("blecent_host_task");
-
-    /* This function will return only when nimble_port_stop() is executed */
-    nimble_port_run();
-    //dbg_txt("nimble_port_run");
-    nimble_port_freertos_deinit();
-}
-#endif
 
 void IRAM_ATTR ble_tx_prog_handler(void)
 {
-    uint8_t direction, flags, llid, length;
+    uint8_t direction, flags, length;
     uint16_t conn_handle;
     int ret;
-    bool res;
 
     if (g_adapter.conn_handle >= 0)
     {
@@ -1106,33 +728,23 @@ void IRAM_ATTR ble_tx_prog_handler(void)
                 {
                 case CENTRAL:
                 {
-                    // if (direction == ble_BleDirection_MASTER_TO_SLAVE)
-                    if (1)
-                    {
-                        /* Send PDU. */
-                        res = send_pdu(
-                            _pdu,
-                            length,
-                            ((flags & RX_QUEUE_FLAG_ENCRYPTED) != 0) /* If encrypted flag set, enable encryption. */
-                        );
-                        // esp_rom_printf("[txprog] sent pdu (%d)\n", res);
-                    }
+                    /* Send PDU. */
+                    send_pdu(
+                        _pdu,
+                        length,
+                        ((flags & RX_QUEUE_FLAG_ENCRYPTED) != 0) /* If encrypted flag set, enable encryption. */
+                    );
                 }
                 break;
 
                 case PERIPHERAL:
                 {
-                    // if (direction == ble_BleDirection_SLAVE_TO_MASTER)
-                    if (1)
-                    {
-                        /* Send PDU. */
-                        res = send_pdu(
-                            _pdu,
-                            length,
-                            ((flags & RX_QUEUE_FLAG_ENCRYPTED) != 0) /* If encrypted flag set, enable encryption. */
-                        );
-                        // esp_rom_printf("[txprog] sent pdu (%d)\n", res);
-                    }
+                    /* Send PDU. */
+                    send_pdu(
+                        _pdu,
+                        length,
+                        ((flags & RX_QUEUE_FLAG_ENCRYPTED) != 0) /* If encrypted flag set, enable encryption. */
+                    );
                 }
                 break;
 
@@ -1155,7 +767,6 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
 {
     uint8_t flags = 0;
     bool b_decrypted = false;
-    uint8_t *p_payload = NULL;
     int ret;
 
     switch (g_adapter.state)
@@ -1401,8 +1012,8 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
             // dbg_txt_rom("[l2cap] start fragment received (state=%d)", g_adapter.b_l2cap_started);
             if (!g_adapter.b_l2cap_started && (length >= 4))
             {
-                p_l2cap_channel = &p_pdu[2];
-                p_l2cap_pkt_size = &p_pdu[0];
+                p_l2cap_channel = (uint16_t *)(&p_pdu[2]);
+                p_l2cap_pkt_size = (uint16_t *)(&p_pdu[0]);
 
                 /* Make sure L2CAP header has the correct channel (attribute or SMP). */
                 if ((*p_l2cap_channel == 0x04) || (*p_l2cap_channel == 0x06))
@@ -1544,8 +1155,6 @@ int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
 
 void ble_advertise(void)
 {
-    uint16_t sz;
-
     /* Set advertising parameters. */
     hci_send_set_adv_params();
 
@@ -1561,124 +1170,57 @@ void ble_advertise(void)
         hci_send_set_scan_resp_data(g_adapter.adv_rsp_data, g_adapter.adv_rsp_data_length);
     }
 
-    if (g_adapter.b_spoof_addr)
-    {
-        r_lld_util_set_bd_address(g_adapter.my_dev_addr, 0);
-    }
-
     /* Enable advertising. */
     hci_send_set_adv_enable(true);
 
-#if 0
-    int rc;
-    struct ble_gap_adv_params adv_params;
-
-    /* Figure out address to use for connect (no privacy for now) */
-    rc = ble_hs_id_infer_auto(0, &g_adapter.my_addr_type);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
-        return;
-    }
-
-    /* Update advertising and scan response data. */
-    if (g_adapter.adv_data_length > 0)
-    {
-        ble_gap_adv_set_data(g_adapter.adv_data, g_adapter.adv_data_length);
-    }
-
-    if (g_adapter.adv_rsp_data_length > 0)
-    {
-        ble_gap_adv_rsp_set_data(g_adapter.adv_rsp_data, g_adapter.adv_rsp_data_length);
-    }
-
-    /* Set advertising parameters. */
-    memset(&adv_params, 0, sizeof adv_params);
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; /* Undirected */
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN; /* General discovery mode */
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
-                           &adv_params, blecent_gap_event, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error enabling advertisement; rc=%d\n", rc);
-        return;
-    }
-
+    /* Spoof BD address if required. */
     if (g_adapter.b_spoof_addr)
     {
         r_lld_util_set_bd_address(g_adapter.my_dev_addr, 0);
     }
-#endif
 }
 
 void adapter_quit_state(adapter_state_t state)
 {
-    int res;
     switch (state)
     {
-    case OBSERVER:
-    {
-        dbg_txt("GAP disc canceled");
+        case OBSERVER:
+            {
+                dbg_txt("GAP disc canceled");
 
-        /* Cancel device discovery. */
-        ble_scan(false);
-    }
-    break;
+                /* Cancel device discovery. */
+                ble_scan(false);
+            }
+            break;
 
-    case CENTRAL:
-    {
-        /* Terminate connection if any. */
-        if (g_adapter.conn_handle >= 0)
-        {
-
-        }
-#if 0
-                /* Stop advertising if required. */
-                if (ble_gap_adv_active())
+        case CENTRAL:
+            {
+                /* Terminate connection if any. */
+                if (g_adapter.conn_handle >= 0)
                 {
-                    dbg_txt("adv stop");
-                    /* Stop advertising. */
-                    ble_gap_adv_stop();
-                }
-                else
-                {
-                    /* Terminate connection. */
-                    //res = ble_gap_terminate(g_adapter.conn_handle, 0x13);
-                    //dbg_txt("terminate connection: %d (%d)", res, g_adapter.conn_handle);
-                    
-                    /* Force disconnect. */
-                    /*
-                    send_raw_data_pdu(
-                        g_adapter.conn_handle,
-                        0x03,
-                        "\x02\x13",
-                        2,
-                        true
-                    );
-                    */
-
                     /* Terminate connection if active. */
                     if (g_adapter.conn_state == CONNECTED)
                         send_terminate_ind();
                 }
-#endif
 
-        /* Wait for the BLE stack to be disconnected. */
-        memset(g_adapter.target_dev_addr, 0, 6);
-        g_adapter.conn_state = DISCONNECTED;
-        g_adapter.conn_handle = -1;
-        g_adapter.b_encrypted = false; /* Do not encrypt anymore. */
-    }
-    break;
+                /* Wait for the BLE stack to be disconnected. */
+                memset(g_adapter.target_dev_addr, 0, 6);
+                g_adapter.conn_state = DISCONNECTED;
+                g_adapter.conn_handle = -1;
+                g_adapter.b_encrypted = false; /* Do not encrypt anymore. */
+            }
+            break;
 
-    case PERIPHERAL:
-    case BROADCASTER:
-    {
-        /* Stop advertising. */
-        hci_send_set_adv_enable(false);
-    }
-    break;
+        case PERIPHERAL:
+        case BROADCASTER:
+            {
+                /* Stop advertising. */
+                hci_send_set_adv_enable(false);
+            }
+            break;
 
-    default:
-        break;
+        default:
+            break;
     }
 }
 
@@ -2021,7 +1563,7 @@ void adapter_on_start(ble_StartCmd *start)
     send_pb_message(&cmd_result);
 }
 
-void adapter_on_stop(ble_StartCmd *stop)
+void adapter_on_stop(ble_StopCmd *stop)
 {
     Message cmd_result;
 
@@ -2047,28 +1589,15 @@ void adapter_on_stop(ble_StartCmd *stop)
         /* Enabled. */
         g_adapter.b_enabled = false;
 
-#if 0
-            /* Stop advertising if required. */
-            if (ble_gap_adv_active())
-            {
-                /* Stop advertising. */
-                ble_gap_adv_stop();
-
-            }
-            else if ((g_adapter.conn_handle >= 0) && (g_adapter.conn_state == CONNECTED))
-            {
-                /* Force disconnect. */
-                /*
-                send_raw_data_pdu(
-                    g_adapter.conn_handle,
-                    0x03,
-                    "\x02\x13",
-                    2,
-                    true
-                );*/
-                send_terminate_ind();
-            }
-#endif
+        if (g_adapter.conn_state != CONNECTED)
+        {
+            hci_send_set_adv_enable(false);
+        }
+        else if ((g_adapter.conn_handle >= 0) && (g_adapter.conn_state == CONNECTED))
+        {
+            /* Force disconnect. */
+            send_terminate_ind();
+        }
 
         /* Success. */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
@@ -2097,14 +1626,6 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
         if (g_adapter.conn_state == CONNECTED)
         {
             /* Force disconnect. */
-            /*
-            send_raw_data_pdu(
-                g_adapter.conn_handle,
-                0x03,
-                "\x02\x13",
-                2,
-                true
-            );*/
             send_terminate_ind();
 
             /* Success. */
@@ -2132,36 +1653,12 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
 void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
 {
     Message cmd_result;
-    struct ble_hs_conn *conn;
-    uint16_t *pkt_count;
-    uint8_t *p_pkt = NULL;
-    int res, ret;
-    int length;
+    int ret;
 
     if (
         ((g_adapter.state == CENTRAL) || (g_adapter.state == PERIPHERAL)) &&
         (g_adapter.conn_state == CONNECTED))
     {
-
-#if 0
-        if (send_pdu(
-            send_pdu_cmd->pdu.bytes,
-            send_pdu_cmd->pdu.size,
-            send_pdu_cmd->encrypt
-        )) {
-            //printf("send_pdu: success\n");
-            /* Success ! */
-            whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
-            send_pb_message(&cmd_result);
-        }
-        else
-        {
-            //printf("send_pdu: error\n");
-            /* Error. */
-            whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-            send_pb_message(&cmd_result);   
-        }
-#endif
         portDISABLE_INTERRUPTS();
         ret = packet_queue_append(
             &g_adapter.tx_queue,
@@ -2200,14 +1697,6 @@ void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr)
 {
     Message cmd_result;
 
-#if 0
-    /* Ask for a random address from NimBLE, if we need a random one. */
-    if (bd_addr->addr_type == ble_BleAddrType_RANDOM)
-    {
-        ble_hs_id_set_rnd(bd_addr->bd_address);
-    }
-#endif
-
     /* Save our spoofed address. */
     memcpy(g_adapter.my_dev_addr, bd_addr->bd_address, 6);
     g_adapter.b_spoof_addr = true;
@@ -2219,8 +1708,6 @@ void adapter_on_set_bd_addr(ble_SetBdAddressCmd *bd_addr)
 
 void adapter_on_reset(void)
 {
-    Message cmd_result;
-
     /* Soft reset ! */
     esp_restart();
 }
@@ -2251,7 +1738,7 @@ void adapter_on_set_speed(discovery_SetTransportSpeed *speed)
 void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
 {
     Message cmd_result;
-    int res = 0, ret;
+    int res = 0;
 
     /* Initialize crypto. */
     if (encryption->enabled)

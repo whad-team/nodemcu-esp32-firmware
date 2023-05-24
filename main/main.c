@@ -84,8 +84,7 @@ void notify_pending_pdus(void)
 void
 app_main(void)
 {
-    int nb_bytes_recvd, msg_size, i, j;
-    uint8_t buffer[128];
+    int nb_bytes_recvd;
     Message message_in = Message_init_default;
 
     reconfigure_uart(115200, true);
