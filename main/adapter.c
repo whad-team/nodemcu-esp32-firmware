@@ -68,7 +68,7 @@ bool IRAM_ATTR send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
                 p_pdu[0],     /* LLID */
                 &p_pdu[2],    /* plaintext PDU payload */
                 p_pdu[1],     /* Length */
-                p_pkt,    /* Output buffer (enc payload + MIC) */    
+                p_pkt,    /* Output buffer (enc payload + MIC) */
                 (g_adapter.state == CENTRAL)
             );
 
@@ -84,7 +84,7 @@ bool IRAM_ATTR send_pdu(uint8_t *p_pdu, int length, bool b_encrypt)
                 );
 
                 /* Packet has been sent. */
-                b_sent = true;             
+                b_sent = true;
             }
             else
             {
@@ -182,7 +182,7 @@ void adapter_init(void)
     ESP_ERROR_CHECK(esp_nimble_hci_and_controller_init());
 
     nimble_port_init();
-    
+
     /* Initialize advertising data. */
     memset(g_adapter.adv_data, 0, 31);
     g_adapter.adv_data_length = 0;
@@ -192,7 +192,7 @@ void adapter_init(void)
     /* Initialize BD address spoofing. */
     memset(g_adapter.my_dev_addr, 0, 6);
     g_adapter.b_spoof_addr = false;
-    
+
     /* Configure the host. */
     ble_hs_cfg.reset_cb = blecent_on_reset;
     ble_hs_cfg.sync_cb = blecent_on_sync;
@@ -353,7 +353,7 @@ blecent_connect_if_interesting(const struct ble_gap_disc_desc *disc)
         MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
         return;
     }
-    
+
 
     /* Try to connect the the advertiser.  Allow 30 seconds (30000 ms) for
      * timeout.
@@ -406,7 +406,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
         if (rc != 0) {
             return 0;
         }
-        
+
         switch (event->disc.event_type)
         {
             case BLE_HCI_ADV_RPT_EVTYPE_DIR_IND:
@@ -514,13 +514,13 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
             /* A new connection was established or a connection attempt failed. */
             if (event->connect.status == 0) {
                 dbg_txt("[nimble] connection established\r\n");
-                
+
                 g_adapter.conn_handle = event->connect.conn_handle;
                 g_adapter.conn_state = CONNECTED;
 
                 rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
                 assert(rc == 0);
-                
+
                 /* In Peripheral mode, WE are advertising. */
                 if (g_adapter.state == PERIPHERAL)
                 {
@@ -672,7 +672,7 @@ static void blecent_on_sync(void)
 }
 
 static void blecent_host_task(void *param)
-{   
+{
     dbg_txt("blecent_host_task");
 
     /* This function will return only when nimble_port_stop() is executed */
@@ -700,7 +700,7 @@ void IRAM_ATTR ble_tx_prog_handler(void)
             ret = packet_queue_pop(
                 &g_adapter.tx_queue,
                 &direction,
-                &flags, 
+                &flags,
                 &conn_handle,
                 &_pdu[0],    /* First byte is LLID */
                 &_pdu[1],    /* Second byte is length */
@@ -794,7 +794,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
                     /* Decryption in-place OK, push decrypted packet. */
                     flags |= RX_QUEUE_FLAG_DECRYPTED;
 
-                    length -= 4;                    
+                    length -= 4;
                     set_packet_length(packet_num, length);
                 }
                 else
@@ -954,7 +954,7 @@ int IRAM_ATTR ble_rx_ctl_handler(int packet_num, uint16_t header, uint8_t *p_pdu
     {
         esp_rom_printf("[rx queue] cannot append pdu to queue: %d", ret);
     }
-    
+
     /* Forward by default. */
     return HOOK_FORWARD;
 }
@@ -971,7 +971,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
 
 
   if (
-    (g_adapter.conn_state == CONNECTED) && 
+    (g_adapter.conn_state == CONNECTED) &&
     ( (g_adapter.state == CENTRAL) || (g_adapter.state == PERIPHERAL) )
   )
   {
@@ -986,7 +986,7 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
         {
             /* Error while decrypting, drop PDU. */
             esp_rom_printf("Packet decryption error\n");
-            return HOOK_BLOCK;               
+            return HOOK_BLOCK;
         }
         else
         {
@@ -1000,12 +1000,12 @@ int IRAM_ATTR ble_rx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
 
             /* Update packet header. */
             set_packet_length(packet_num, length);
-        }        
+        }
     }
 
-    /** 
+    /**
     * L2CAP layer tracking.
-    * 
+    *
     * This feature has been implemented to avoid some noise packets
     * reported by r_lld_rx_pdu_handler().
     **/
@@ -1122,10 +1122,10 @@ int IRAM_ATTR ble_tx_data_handler(int packet_num, uint16_t header, uint8_t *p_pd
         true,
         false
     );
-    pending_pb_message(&pdu_msg); 
+    pending_pb_message(&pdu_msg);
   }
 
-  return HOOK_FORWARD;  
+  return HOOK_FORWARD;
 }
 
 int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
@@ -1133,9 +1133,9 @@ int IRAM_ATTR ble_tx_ctl_handler(llcp_opinfo *p_llcp_pdu)
   //dbg_txt_rom("[ble:tx:ctl] sent 0x%02x opcode", p_llcp_pdu->opcode);
   /* Rebuild a data PDU and send it to the host. We don't need to forward this
   to the underlying BLE stack as it is not used in our case. */
-  
-  /* 
-   * Only let LL_FEATURE_RSP, LL_FEATURE_REQ, LL_CONNECTION_PARAM_REQ, 
+
+  /*
+   * Only let LL_FEATURE_RSP, LL_FEATURE_REQ, LL_CONNECTION_PARAM_REQ,
    * LL_CONNECTION_PARAM_RSP, LL_PING_REQ, LL_PING_RSP, LL_LENGTH_REQ,
    * LL_LENGTH_RSP.
    */
@@ -1233,7 +1233,7 @@ void adapter_quit_state(adapter_state_t state)
                     /* Terminate connection. */
                     //res = ble_gap_terminate(g_adapter.conn_handle, 0x13);
                     //dbg_txt("terminate connection: %d (%d)", res, g_adapter.conn_handle);
-                    
+
                     /* Force disconnect. */
                     /*
                     send_raw_data_pdu(
@@ -1459,7 +1459,7 @@ void adapter_on_enable_adv(ble_AdvModeCmd *adv_mode)
     else
     {
         whad_init_error_message(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);        
+        send_pb_message(&cmd_result);
     }
 }
 
@@ -1488,7 +1488,7 @@ void adapter_on_enable_peripheral(ble_PeripheralModeCmd *periph_mode)
     else
     {
         whad_init_error_message(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);        
+        send_pb_message(&cmd_result);
     }
 }
 
@@ -1533,7 +1533,7 @@ void adapter_on_enable_central(ble_CentralModeCmd *central_mode)
     else
     {
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);        
+        send_pb_message(&cmd_result);
     }
 }
 
@@ -1556,7 +1556,7 @@ void adapter_on_connect(ble_ConnectToCmd *connect)
     else
     {
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);   
+        send_pb_message(&cmd_result);
     }
 }
 
@@ -1593,7 +1593,7 @@ void adapter_on_start(ble_StartCmd *start)
 
                 /* Success. */
                 whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
-                send_pb_message(&cmd_result);                
+                send_pb_message(&cmd_result);
 
                 return;
             }
@@ -1601,7 +1601,7 @@ void adapter_on_start(ble_StartCmd *start)
             {
                 /* Send an error (wrong parameter). */
                 whad_generic_cmd_result(&cmd_result, generic_ResultCode_PARAMETER_ERROR);
-                send_pb_message(&cmd_result);   
+                send_pb_message(&cmd_result);
             }
         }
         break;
@@ -1698,7 +1698,7 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
                     true
                 );*/
                 send_terminate_ind();
-                
+
                 /* Success. */
                 whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
                 send_pb_message(&cmd_result);
@@ -1706,7 +1706,7 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
             else
             {
                 whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-                send_pb_message(&cmd_result);                
+                send_pb_message(&cmd_result);
             }
         }
         break;
@@ -1715,7 +1715,7 @@ void adapter_on_disconnect(ble_DisconnectCmd *disconnect)
         default:
         {
             whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-            send_pb_message(&cmd_result);  
+            send_pb_message(&cmd_result);
         }
         break;
     }
@@ -1752,7 +1752,7 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
             //printf("send_pdu: error\n");
             /* Error. */
             whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-            send_pb_message(&cmd_result);   
+            send_pb_message(&cmd_result);
         }
         #endif
         portDISABLE_INTERRUPTS();
@@ -1779,14 +1779,14 @@ void adapter_on_send_pdu(ble_SendPDUCmd *send_pdu_cmd)
         {
             /* Error. */
             whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-            send_pb_message(&cmd_result);   
+            send_pb_message(&cmd_result);
         }
     }
     else
     {
         //dbg_txt_rom("[pdu] cannot send pdu (state:%d, conn_state:%d)",g_adapter.state,g_adapter.conn_state );
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);   
+        send_pb_message(&cmd_result);
     }
 }
 
@@ -1821,7 +1821,7 @@ void adapter_on_reset(void)
 void adapter_on_set_speed(discovery_SetTransportSpeed *speed)
 {
     Message cmd_result;
-    
+
     if (speed->speed <= 460800)
     {
         /* Send success message. */
@@ -1837,7 +1837,7 @@ void adapter_on_set_speed(discovery_SetTransportSpeed *speed)
     {
         /* Send error message. */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);   
+        send_pb_message(&cmd_result);
     }
 }
 
@@ -1845,13 +1845,13 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
 {
     Message cmd_result;
     int res=0,ret;
-    
+
     /* Initialize crypto. */
     if (encryption->enabled)
     {
         /* Copy  128-bit Key and IV. */
-        memcpy(g_adapter.enc_key, encryption->key, 16);
-        memcpy(g_adapter.enc_iv, encryption->iv, 16);
+        memcpy(g_adapter.enc_key, encryption->ll_key, 16);
+        memcpy(g_adapter.enc_iv, encryption->ll_iv, 16);
 
         /* Reset master and slave counters. */
         g_adapter.enc_master_counter = 0;
@@ -1887,7 +1887,7 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
 
         /* Send error message. */
         whad_generic_cmd_result(&cmd_result, generic_ResultCode_ERROR);
-        send_pb_message(&cmd_result);           
+        send_pb_message(&cmd_result);
     }
 
     /* Disable encryption in BLE controller. */
