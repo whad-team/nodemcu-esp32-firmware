@@ -40,7 +40,7 @@ static uint8_t hci_cmd_buf[128];
 
 /**
  * @brief Send synchronously an HCI command.
- * 
+ *
  * @param hci_command   HCI command buffer to send
  * @param size          Size of the HCI command buffer
  */
@@ -104,7 +104,7 @@ static void hci_cmd_send_ble_scan_params(void)
 
 /**
  * @brief Enable or disable LE device scanning.
- * 
+ *
  * @param enabled   True to enable scanning, False to disable.
  */
 
@@ -172,13 +172,13 @@ void hci_send_set_adv_params(void)
         7,      /* use channels 37, 38 and 39. */
         0      /* No adv filtering policy */
     );
-    send_hci_command_sync(hci_cmd_buf, sz);   
+    send_hci_command_sync(hci_cmd_buf, sz);
 }
 
 
 /**
  * @brief Set LE advertising data (used in advertising PDU)
- * 
+ *
  * @param p_adv_data    Pointer to the advertising data to use
  * @param length        Length of advertising data
  */
@@ -192,7 +192,7 @@ void hci_send_set_adv_data(uint8_t *p_adv_data, uint8_t length)
 
 /**
  * @brief Set LE scan response data (used in scan response PDU)
- * 
+ *
  * @param p_scan_resp_data  Pointer to the scan response data to use
  * @param length            Length of scan response data
  */
@@ -206,7 +206,7 @@ void hci_send_set_scan_resp_data(uint8_t *p_scan_resp_data, uint8_t length)
 
 /**
  * @brief Enable/disable LE advertising
- * 
+ *
  * @param enable    True to enable advertising, False to disable.
  */
 
@@ -457,7 +457,7 @@ static esp_vhci_host_callback_t vhci_host_cb = {
 
 /**
  * @brief Enable/disable BLE scanning
- * 
+ *
  * @param enable    true to enable scanning, false to disable
  */
 
@@ -476,7 +476,7 @@ void ble_scan(bool enable)
 
 /**
  * @brief Set LE random BD address
- * 
+ *
  * @param address   Pointer to a BD address buffer.
  */
 
@@ -1537,7 +1537,7 @@ void adapter_on_start(ble_StartCmd *start)
             g_adapter.b_enabled = true;
 
             /* Initiate BLE connection. */
-            ble_connect(); 
+            ble_connect();
 
             /* Success. */
             whad_generic_cmd_result(&cmd_result, generic_ResultCode_SUCCESS);
@@ -1744,8 +1744,8 @@ void adapter_on_encryption_changed(ble_SetEncryptionCmd *encryption)
     if (encryption->enabled)
     {
         /* Copy  128-bit Key and IV. */
-        memcpy(g_adapter.enc_key, encryption->key, 16);
-        memcpy(g_adapter.enc_iv, encryption->iv, 16);
+        memcpy(g_adapter.enc_key, encryption->ll_key, 16);
+        memcpy(g_adapter.enc_iv, encryption->ll_iv, 16);
 
         /* Reset master and slave counters. */
         g_adapter.enc_master_counter = 0;

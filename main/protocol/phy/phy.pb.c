@@ -12,7 +12,13 @@ PB_BIND(phy_SetASKModulationCmd, phy_SetASKModulationCmd, AUTO)
 PB_BIND(phy_SetFSKModulationCmd, phy_SetFSKModulationCmd, AUTO)
 
 
+PB_BIND(phy_Set4FSKModulationCmd, phy_Set4FSKModulationCmd, AUTO)
+
+
 PB_BIND(phy_SetGFSKModulationCmd, phy_SetGFSKModulationCmd, AUTO)
+
+
+PB_BIND(phy_SetMSKModulationCmd, phy_SetMSKModulationCmd, AUTO)
 
 
 PB_BIND(phy_SetBPSKModulationCmd, phy_SetBPSKModulationCmd, AUTO)
@@ -21,13 +27,13 @@ PB_BIND(phy_SetBPSKModulationCmd, phy_SetBPSKModulationCmd, AUTO)
 PB_BIND(phy_SetQPSKModulationCmd, phy_SetQPSKModulationCmd, AUTO)
 
 
-PB_BIND(phy_SetSubGhzFrequencyCmd, phy_SetSubGhzFrequencyCmd, AUTO)
+PB_BIND(phy_SetLoRaModulationCmd, phy_SetLoRaModulationCmd, AUTO)
 
 
-PB_BIND(phy_SetTwoDotFourGhzFrequencyCmd, phy_SetTwoDotFourGhzFrequencyCmd, AUTO)
+PB_BIND(phy_GetSupportedFrequenciesCmd, phy_GetSupportedFrequenciesCmd, AUTO)
 
 
-PB_BIND(phy_SetFiveGhzFrequencyCmd, phy_SetFiveGhzFrequencyCmd, AUTO)
+PB_BIND(phy_SetFrequencyCmd, phy_SetFrequencyCmd, AUTO)
 
 
 PB_BIND(phy_SetDataRateCmd, phy_SetDataRateCmd, AUTO)
@@ -78,7 +84,16 @@ PB_BIND(phy_Jammed, phy_Jammed, AUTO)
 PB_BIND(phy_MonitoringReport, phy_MonitoringReport, AUTO)
 
 
+PB_BIND(phy_SupportedFrequencyRanges, phy_SupportedFrequencyRanges, AUTO)
+
+
+PB_BIND(phy_SupportedFrequencyRanges_FrequencyRange, phy_SupportedFrequencyRanges_FrequencyRange, AUTO)
+
+
 PB_BIND(phy_Message, phy_Message, 2)
+
+
+
 
 
 
