@@ -1332,7 +1332,7 @@ void adapter_on_device_info_req(discovery_DeviceInfoQuery *query)
         &reply,
         discovery_DeviceType_Esp32BleFuzzer,
         g_adapter.dev_name,
-        0x0100,
+        0x0001,
         460800, /* Max speed on UART */
         FIRMWARE_AUTHOR,
         FIRMWARE_URL,
